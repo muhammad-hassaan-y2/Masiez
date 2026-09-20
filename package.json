@@ -1,0 +1,15 @@
+{
+  "name": "drone-autonomy",
+  "private": true,
+  "workspaces": ["shared", "game", "server"],
+  "scripts": {
+    "dev:game": "npm run dev --workspace=game",
+    "dev:server": "npm run dev --workspace=server",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:game\"",
+    "build": "npm run build --workspace=shared && npm run build --workspace=game && npm run build --workspace=server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.6.0"
+  }
+}
