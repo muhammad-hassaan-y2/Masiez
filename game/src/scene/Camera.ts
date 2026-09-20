@@ -37,25 +37,25 @@ export class Mat4 {
         let y1 = z2 * x0 - z0 * x2;
         let y2 = z0 * x1 - z1 * x0;
 
-        // Column 0 (X axis in column-major order)
+        // Column 0
         out[0] = x0;
         out[1] = x1;
         out[2] = x2;
         out[3] = 0;
 
-        // Column 1 (Y axis in column-major order)
+        // Column 1
         out[4] = y0;
         out[5] = y1;
         out[6] = y2;
         out[7] = 0;
 
-        // Column 2 (Z axis in column-major order)
+        // Column 2
         out[8] = z0;
         out[9] = z1;
         out[10] = z2;
         out[11] = 0;
 
-        // Column 3 (Eye translation in column-major order)
+        // Column 3
         out[12] = -(x0 * eye[0] + x1 * eye[1] + x2 * eye[2]);
         out[13] = -(y0 * eye[0] + y1 * eye[1] + y2 * eye[2]);
         out[14] = -(z0 * eye[0] + z1 * eye[1] + z2 * eye[2]);
@@ -118,14 +118,14 @@ export class Mat4 {
 }
 
 export class Camera {
-    public position: [number, number, number] = [0, 20, 30];
-    public target: [number, number, number] = [0, 15, 0];
+    public position: [number, number, number] = [0, 5, 8];
+    public target: [number, number, number] = [0, 1, 0];
     public viewMatrix = Mat4.create();
     public projMatrix = Mat4.create();
     public viewProjMatrix = Mat4.create();
     public invViewProjMatrix = Mat4.create();
 
-    public fovRad: number = Math.PI / 3.0; // 60 deg
+    public fovRad: number = Math.PI / 3.0;
     public mode: 'CHASE' | 'FPV' | 'ORBIT' = 'CHASE';
     private initialized: boolean = false;
 
@@ -133,8 +133,8 @@ export class Camera {
         const yawRad = droneYawDeg * (Math.PI / 180.0);
 
         if (this.mode === 'CHASE') {
-            const distance = 8.0;
-            const height = 3.5;
+            const distance = 5.0;
+            const height = 2.2;
             const targetX = dronePos[0] - Math.sin(yawRad) * distance;
             const targetZ = dronePos[2] - Math.cos(yawRad) * distance;
             const targetY = dronePos[1] + height;
@@ -145,9 +145,9 @@ export class Camera {
                 this.position[2] = targetZ;
                 this.initialized = true;
             } else {
-                this.position[0] += (targetX - this.position[0]) * 0.15;
-                this.position[1] += (targetY - this.position[1]) * 0.15;
-                this.position[2] += (targetZ - this.position[2]) * 0.15;
+                this.position[0] += (targetX - this.position[0]) * 0.2;
+                this.position[1] += (targetY - this.position[1]) * 0.2;
+                this.position[2] += (targetZ - this.position[2]) * 0.2;
             }
 
             this.target[0] = dronePos[0];
@@ -155,7 +155,7 @@ export class Camera {
             this.target[2] = dronePos[2];
         } else if (this.mode === 'FPV') {
             this.position[0] = dronePos[0];
-            this.position[1] = dronePos[1] + 0.1;
+            this.position[1] = dronePos[1] + 0.15;
             this.position[2] = dronePos[2];
 
             this.target[0] = dronePos[0] + Math.sin(yawRad) * 10.0;

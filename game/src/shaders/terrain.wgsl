@@ -33,12 +33,12 @@ struct VertexOutput {
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     
-    // Sample heightmap
+    // Sample heightmap centered at (0,0) reference elevation = 0m
+    let hCenter = textureSampleLevel(heightmapTex, texSampler, vec2<f32>(0.5, 0.5), 0.0).r;
     let hSample = textureSampleLevel(heightmapTex, texSampler, in.uv, 0.0).r;
-    let worldY = in.position.y + hSample * 60.0;
+    let worldY = (hSample - hCenter) * 60.0;
     let worldP = vec3<f32>(in.position.x, worldY, in.position.z);
     
-    // Sample normalmap
     let nSample = textureSampleLevel(normalmapTex, texSampler, in.uv, 0.0).rgb * 2.0 - 1.0;
     
     out.worldPos = worldP;
@@ -50,27 +50,24 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let uvScaled = in.uv * 40.0;
+    let uvScaled = in.uv * 50.0;
     let grassColor = textureSample(grassAlbedoTex, texSampler, uvScaled).rgb;
     let rockColor = textureSample(rockAlbedoTex, texSampler, uvScaled).rgb;
     
-    // Slope-based splatting (rock on steep slopes, grass on flat ground)
     let slope = 1.0 - clamp(in.normal.y, 0.0, 1.0);
-    let blend = clamp((slope - 0.15) * 4.0, 0.0, 1.0);
+    let blend = clamp((slope - 0.15) * 3.0, 0.0, 1.0);
     let albedo = mix(grassColor, rockColor, blend);
     
-    // Lighting
     let N = normalize(in.normal);
     let L = normalize(u.sunDir);
-    let V = normalize(u.cameraPos - in.worldPos);
-    
     let NdotL = max(dot(N, L), 0.0);
-    let ambient = vec3<f32>(0.3, 0.4, 0.5) * 0.45;
+    
+    let ambient = vec3<f32>(0.35, 0.45, 0.55) * 0.5;
     let diffuse = u.sunColor * NdotL * 0.85;
     
     let dist = length(u.cameraPos - in.worldPos);
-    let fogFactor = clamp((dist - 150.0) / 900.0, 0.0, 0.65);
-    let fogColor = vec3<f32>(0.65, 0.78, 0.92);
+    let fogFactor = clamp((dist - 200.0) / 800.0, 0.0, 0.6);
+    let fogColor = vec3<f32>(0.7, 0.85, 0.98);
     
     let litColor = mix((ambient + diffuse) * albedo, fogColor, fogFactor);
     return vec4<f32>(litColor, 1.0);

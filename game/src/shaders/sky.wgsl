@@ -13,7 +13,6 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    // Full screen triangle
     var pos = array<vec2<f32>, 3>(
         vec2<f32>(-1.0, -1.0),
         vec2<f32>( 3.0, -1.0),
@@ -22,31 +21,26 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     
     var out: VertexOutput;
     let p = pos[vertexIndex];
-    out.clipPos = vec4<f32>(p, 0.99999, 1.0);
+    out.clipPos = vec4<f32>(p, 0.9999, 1.0);
     
-    // Unproject to world view ray
     let worldP = u.invViewProj * vec4<f32>(p, 1.0, 1.0);
-    out.viewRay = worldP.xyz / worldP.w;
+    out.viewRay = worldP.xyz;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dir = normalize(in.viewRay);
+    let upDot = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
     
-    // Atmospheric Rayleigh/Mie scattering gradient
-    let up = vec3<f32>(0.0, 1.0, 0.0);
-    let upDot = clamp(dot(dir, up), 0.0, 1.0);
+    let horizonColor = vec3<f32>(0.72, 0.85, 0.98);
+    let zenithColor  = vec3<f32>(0.2, 0.48, 0.88);
+    let skyColor = mix(horizonColor, zenithColor, pow(upDot, 0.8));
     
-    let horizonColor = vec3<f32>(0.7, 0.82, 0.95);
-    let zenithColor  = vec3<f32>(0.15, 0.4, 0.85);
-    let skyColor = mix(horizonColor, zenithColor, pow(upDot, 0.6));
+    let L = normalize(u.sunDir);
+    let sunDot = max(dot(dir, L), 0.0);
+    let sunDisc = pow(sunDot, 256.0) * 1.5;
+    let sunGlow = pow(sunDot, 12.0) * vec3<f32>(1.0, 0.92, 0.75) * 0.45;
     
-    // Sun disc
-    let sunDot = max(dot(dir, normalize(u.sunDir)), 0.0);
-    let sunDisc = pow(sunDot, 512.0) * 1.5;
-    let sunGlow = pow(sunDot, 16.0) * vec3<f32>(1.0, 0.9, 0.7) * 0.4;
-    
-    let finalColor = skyColor + sunGlow + vec3<f32>(sunDisc, sunDisc, sunDisc);
-    return vec4<f32>(finalColor, 1.0);
+    return vec4<f32>(skyColor + sunGlow + vec3<f32>(sunDisc), 1.0);
 }
