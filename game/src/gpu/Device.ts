@@ -84,23 +84,51 @@ export class GPUDeviceContext {
         return buffer;
     }
 
-    public async loadTexture(url: string): Promise<GPUTexture> {
-        const res = await fetch(url);
-        const blob = await res.blob();
-        const imgBitmap = await createImageBitmap(blob);
-
+    public createFallbackSolidTexture(r: number, g: number, b: number, a: number = 255): GPUTexture {
         const texture = this.device.createTexture({
-            size: [imgBitmap.width, imgBitmap.height, 1],
+            size: [2, 2, 1],
             format: 'rgba8unorm',
-            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         });
-
-        this.device.queue.copyExternalImageToTexture(
-            { source: imgBitmap },
+        const data = new Uint8Array([
+            r, g, b, a,  r, g, b, a,
+            r, g, b, a,  r, g, b, a
+        ]);
+        this.device.queue.writeTexture(
             { texture },
-            [imgBitmap.width, imgBitmap.height]
+            data,
+            { bytesPerRow: 8 },
+            [2, 2]
         );
-
         return texture;
+    }
+
+    public async loadTexture(url: string, fallbackColor: [number, number, number] = [128, 128, 128]): Promise<GPUTexture> {
+        try {
+            const res = await fetch(url);
+            if (!res.ok) {
+                console.warn(`Failed to fetch texture ${url}, using fallback color.`);
+                return this.createFallbackSolidTexture(fallbackColor[0], fallbackColor[1], fallbackColor[2]);
+            }
+            const blob = await res.blob();
+            const imgBitmap = await createImageBitmap(blob);
+
+            const texture = this.device.createTexture({
+                size: [imgBitmap.width, imgBitmap.height, 1],
+                format: 'rgba8unorm',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+            });
+
+            this.device.queue.copyExternalImageToTexture(
+                { source: imgBitmap },
+                { texture },
+                [imgBitmap.width, imgBitmap.height]
+            );
+
+            return texture;
+        } catch (e) {
+            console.warn(`Error loading texture ${url}:`, e);
+            return this.createFallbackSolidTexture(fallbackColor[0], fallbackColor[1], fallbackColor[2]);
+        }
     }
 }

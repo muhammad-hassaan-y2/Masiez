@@ -20,8 +20,8 @@ export class TerrainRenderer {
     public async init(): Promise<void> {
         const device = this.ctx.device;
 
-        // 1. Create Terrain Grid Geometry (512x512 vertices across 1000m x 1000m)
-        const GRID_RES = 128; // 128x128 quad grid for high performance
+        // 1. Create Terrain Grid Geometry (128x128 quad grid for smooth 1km x 1km terrain)
+        const GRID_RES = 128;
         const SIZE = 1000.0;
 
         const vertices: number[] = [];
@@ -52,24 +52,23 @@ export class TerrainRenderer {
         this.vertexBuffer = this.ctx.createBuffer(new Float32Array(vertices), GPUBufferUsage.VERTEX);
         this.indexBuffer = this.ctx.createBuffer(new Uint32Array(indices), GPUBufferUsage.INDEX);
 
-        // 2. Uniform buffer (viewProj: 64b, cameraPos: 12b, time: 4b, sunDir: 12b, pad: 4b, sunColor: 12b, pad: 4b = 112 bytes)
+        // 2. Uniform buffer (256 bytes)
         this.uniformBuffer = device.createBuffer({
             size: 256,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
-        // 3. Load Textures
-        const heightmapTex = await this.ctx.loadTexture('/assets/terrain/heightmap.png');
-        const normalmapTex = await this.ctx.loadTexture('/assets/terrain/normalmap.png');
-        const grassAlbedoTex = await this.ctx.loadTexture('/assets/textures/grass/albedo.jpg');
-        const rockAlbedoTex = await this.ctx.loadTexture('/assets/textures/rock/albedo.jpg');
-        const grassNormalTex = await this.ctx.loadTexture('/assets/textures/grass/normal.jpg');
-        const rockNormalTex = await this.ctx.loadTexture('/assets/textures/rock/normal.jpg');
+        // 3. Load Textures with resilient fallbacks
+        const heightmapTex = await this.ctx.loadTexture('/assets/terrain/heightmap.png', [128, 128, 128]);
+        const normalmapTex = await this.ctx.loadTexture('/assets/terrain/normalmap.png', [128, 128, 255]);
+        const grassAlbedoTex = await this.ctx.loadTexture('/assets/textures/grass/albedo.jpg', [70, 130, 50]);
+        const rockAlbedoTex = await this.ctx.loadTexture('/assets/textures/rock/albedo.jpg', [120, 110, 100]);
+        const grassNormalTex = await this.ctx.loadTexture('/assets/textures/grass/normal.jpg', [128, 128, 255]);
+        const rockNormalTex = await this.ctx.loadTexture('/assets/textures/rock/normal.jpg', [128, 128, 255]);
 
         this.sampler = device.createSampler({
             magFilter: 'linear',
             minFilter: 'linear',
-            mipmapFilter: 'linear',
             addressModeU: 'repeat',
             addressModeV: 'repeat',
         });
@@ -119,24 +118,22 @@ export class TerrainRenderer {
     }
 
     public render(pass: GPURenderPassEncoder, camera: Camera, time: number): void {
-        const uniforms = new Float32Array(32);
-        // viewProj (16 floats)
-        uniforms.set(camera.viewProjMatrix, 0);
-        // cameraPos (3 floats)
-        uniforms[16] = camera.position[0];
-        uniforms[17] = camera.position[1];
-        uniforms[18] = camera.position[2];
-        // time (1 float)
-        uniforms[19] = time;
-        // sunDir (3 floats)
-        uniforms[20] = 0.6;
+        const uniforms = new Float32Array(64); // 256 bytes
+        uniforms.set(camera.viewProjMatrix, 0); // 16 floats (0..15)
+        uniforms[16] = camera.position[0];      // 16
+        uniforms[17] = camera.position[1];      // 17
+        uniforms[18] = camera.position[2];      // 18
+        uniforms[19] = time;                    // 19
+
+        uniforms[20] = 0.6; // sunDir (20..22)
         uniforms[21] = 0.8;
         uniforms[22] = 0.4;
-        uniforms[23] = 0.0;
-        // sunColor (3 floats)
-        uniforms[24] = 1.0;
+        uniforms[23] = 0.0; // padding to offset 96
+
+        uniforms[24] = 1.0; // sunColor (24..26)
         uniforms[25] = 0.95;
         uniforms[26] = 0.85;
+        uniforms[27] = 0.0;
 
         this.ctx.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
