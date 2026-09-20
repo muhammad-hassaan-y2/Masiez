@@ -71,27 +71,34 @@ export class HUD {
         rightPanel.appendChild(this.stateEl);
 
         const controlsHint = document.createElement('div');
+        controlsHint.id = 'hud-controls';
         controlsHint.style.cssText = `
             position: absolute;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(10, 20, 30, 0.85);
-            padding: 10px 20px;
+            background: rgba(10, 20, 30, 0.88);
+            backdrop-filter: blur(8px);
+            padding: 10px 24px;
             border-radius: 20px;
-            border: 1px solid rgba(0, 255, 204, 0.3);
+            border: 1px solid rgba(0, 255, 204, 0.4);
             font-size: 13px;
-            color: #e0e0e0;
+            color: #f0f0f0;
             display: flex;
             gap: 16px;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            white-space: nowrap;
         `;
         controlsHint.innerHTML = `
-            <span><b>[SPACE]</b> ARM/DISARM</span>
-            <span><b>[SHIFT/CTRL]</b> THROTTLE</span>
-            <span><b>[WASD]</b> PITCH/ROLL</span>
+            <span style="color:#00ffcc;"><b>[CLICK]</b> MOUSE STEER</span>
+            <span><b>[DRAG/WHEEL]</b> ORBIT & ZOOM</span>
+            <span><b>[SPACE]</b> ARM</span>
+            <span><b>[SHIFT/CTRL]</b> ALT</span>
+            <span><b>[WASD]</b> MOVE</span>
             <span><b>[Q/E]</b> YAW</span>
-            <span><b>[TAB]</b> MODE</span>
             <span><b>[C]</b> CAM</span>
+            <span><b>[TAB]</b> AUTOPILOT</span>
         `;
 
         this.container.appendChild(leftPanel);
@@ -116,6 +123,6 @@ export class HUD {
         this.batEl.innerText = `BAT: ${sensors.batteryPct.toFixed(0)}%`;
         this.gpsEl.innerText = `GPS: 3D FIX (12 sats)`;
         this.modeEl.innerText = `MODE: ${mode}`;
-        this.stateEl.innerHTML = `STATE: <span style="color:${armed ? '#00ff66' : '#ff3333'}">${armed ? 'ARMED' : 'DISARMED'}</span>`;
+        this.stateEl.innerHTML = `STATE: <span style="color:${armed ? '#00ff66' : '#ff3333'}; font-weight: bold;">${armed ? '● ARMED' : '○ DISARMED'}</span>`;
     }
 }

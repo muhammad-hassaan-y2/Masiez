@@ -127,17 +127,35 @@ export class Camera {
 
     public fovRad: number = Math.PI / 3.0;
     public mode: 'CHASE' | 'FPV' | 'ORBIT' = 'CHASE';
+
+    // Interactive mouse look offsets
+    public mouseOrbitYaw: number = 0;   // radians
+    public mouseOrbitPitch: number = 0.35; // radians (~20 deg down)
+    public baseDistance: number = 5.0;
+
     private initialized: boolean = false;
 
+    public applyMouseDelta(dx: number, dy: number, zoomDelta: number): void {
+        const sensitivity = 0.005;
+        this.mouseOrbitYaw += dx * sensitivity;
+        this.mouseOrbitPitch += dy * sensitivity;
+
+        // Clamp pitch to avoid gimbal flipping (-85 deg to +85 deg)
+        this.mouseOrbitPitch = Math.max(-1.4, Math.min(1.4, this.mouseOrbitPitch));
+        this.baseDistance = Math.max(1.5, Math.min(25.0, this.baseDistance + zoomDelta));
+    }
+
     public update(dronePos: [number, number, number], droneYawDeg: number, aspect: number): void {
-        const yawRad = droneYawDeg * (Math.PI / 180.0);
+        const droneYawRad = droneYawDeg * (Math.PI / 180.0);
 
         if (this.mode === 'CHASE') {
-            const distance = 5.0;
-            const height = 2.2;
-            const targetX = dronePos[0] - Math.sin(yawRad) * distance;
-            const targetZ = dronePos[2] - Math.cos(yawRad) * distance;
-            const targetY = dronePos[1] + height;
+            const effectiveYaw = droneYawRad + this.mouseOrbitYaw;
+            const distHoriz = this.baseDistance * Math.cos(this.mouseOrbitPitch);
+            const distVert  = this.baseDistance * Math.sin(this.mouseOrbitPitch);
+
+            const targetX = dronePos[0] - Math.sin(effectiveYaw) * distHoriz;
+            const targetZ = dronePos[2] - Math.cos(effectiveYaw) * distHoriz;
+            const targetY = Math.max(0.5, dronePos[1] + distVert);
 
             if (!this.initialized) {
                 this.position[0] = targetX;
@@ -145,9 +163,9 @@ export class Camera {
                 this.position[2] = targetZ;
                 this.initialized = true;
             } else {
-                this.position[0] += (targetX - this.position[0]) * 0.2;
-                this.position[1] += (targetY - this.position[1]) * 0.2;
-                this.position[2] += (targetZ - this.position[2]) * 0.2;
+                this.position[0] += (targetX - this.position[0]) * 0.25;
+                this.position[1] += (targetY - this.position[1]) * 0.25;
+                this.position[2] += (targetZ - this.position[2]) * 0.25;
             }
 
             this.target[0] = dronePos[0];
@@ -158,9 +176,10 @@ export class Camera {
             this.position[1] = dronePos[1] + 0.15;
             this.position[2] = dronePos[2];
 
-            this.target[0] = dronePos[0] + Math.sin(yawRad) * 10.0;
-            this.target[1] = dronePos[1];
-            this.target[2] = dronePos[2] + Math.cos(yawRad) * 10.0;
+            const lookYaw = droneYawRad + this.mouseOrbitYaw;
+            this.target[0] = dronePos[0] + Math.sin(lookYaw) * 10.0;
+            this.target[1] = dronePos[1] - Math.sin(this.mouseOrbitPitch) * 10.0;
+            this.target[2] = dronePos[2] + Math.cos(lookYaw) * 10.0;
         }
 
         Mat4.perspective(this.projMatrix, this.fovRad, aspect, 0.1, 2000.0);

@@ -1,6 +1,7 @@
 import { GPUDeviceContext } from './gpu/Device';
 import { PhysicsBridge } from './wasm/PhysicsBridge';
 import { TerrainRenderer } from './gpu/TerrainRenderer';
+import { StructuresRenderer } from './gpu/StructuresRenderer';
 import { ModelRenderer } from './gpu/ModelRenderer';
 import { SkyRenderer } from './gpu/SkyRenderer';
 import { Camera } from './scene/Camera';
@@ -41,13 +42,16 @@ async function bootstrap() {
     const terrainRenderer = new TerrainRenderer(gpu);
     await terrainRenderer.init();
 
+    const structuresRenderer = new StructuresRenderer(gpu);
+    await structuresRenderer.init();
+
     const modelRenderer = new ModelRenderer(gpu);
     await modelRenderer.init();
     await modelRenderer.loadGLB('/assets/models/drone.glb');
 
     // 4. Camera & Input & HUD
     const camera = new Camera();
-    const input = new InputManager();
+    const input = new InputManager(canvas);
     const hud = new HUD();
 
     input.onArmToggle = () => {
@@ -119,8 +123,12 @@ async function bootstrap() {
         const deltaSec = Math.min((now - lastTime) / 1000.0, 0.1);
         lastTime = now;
 
-        // Input update
+        // Input update & Mouse Look / Zoom
         input.update();
+        const mouse = input.consumeMouseDelta();
+        const zoom = input.consumeMouseZoom();
+        camera.applyMouseDelta(mouse.dx, mouse.dy, zoom);
+
         physics.setManualInput(input.throttle, input.pitch, input.roll, input.yaw);
 
         // Fixed-timestep C++ simulation steps
@@ -230,13 +238,16 @@ async function bootstrap() {
 
         const timeSec = now / 1000.0;
 
-        // 1. Draw Sky
+        // 1. Draw Atmospheric Sky
         skyRenderer.render(renderPass, camera, timeSec);
 
-        // 2. Draw Terrain (Heightmap + Polyhaven Grass/Rock textures)
+        // 2. Draw Airfield & PBR Terrain
         terrainRenderer.render(renderPass, camera, timeSec);
 
-        // 3. Draw Drone GLB
+        // 3. Draw 3D Structures (Tower, Hangars, City Skyline, Runway Lights, Gates, Trees)
+        structuresRenderer.render(renderPass, camera, timeSec);
+
+        // 4. Draw Drone 3D Model
         modelRenderer.render(renderPass, camera, pos, rot, 1.5, timeSec);
 
         renderPass.end();
@@ -249,3 +260,4 @@ async function bootstrap() {
 }
 
 bootstrap().catch(err => console.error("Bootstrap error:", err));
+
