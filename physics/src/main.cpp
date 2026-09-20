@@ -22,6 +22,10 @@ static float groundCallback(float x, float z) {
 extern "C" {
 
 WASM_EXPORT void physics_init(float x, float y, float z) {
+    float groundY = groundCallback(x, z);
+    if (y < groundY + 0.5f) {
+        y = groundY + 0.5f;
+    }
     g_physics.init(x, y, z);
     g_armed = false;
 }

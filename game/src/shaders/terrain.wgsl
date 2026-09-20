@@ -3,7 +3,9 @@ struct Uniforms {
     cameraPos: vec3<f32>,
     time: f32,
     sunDir: vec3<f32>,
+    pad0: f32,
     sunColor: vec3<f32>,
+    pad1: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -33,7 +35,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     
     // Sample heightmap
     let hSample = textureSampleLevel(heightmapTex, texSampler, in.uv, 0.0).r;
-    let worldY = in.position.y + hSample * 200.0;
+    let worldY = in.position.y + hSample * 60.0;
     let worldP = vec3<f32>(in.position.x, worldY, in.position.z);
     
     // Sample normalmap
@@ -48,14 +50,13 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let uvScaled = in.uv * 50.0; // Tile textures across terrain
-    
+    let uvScaled = in.uv * 40.0;
     let grassColor = textureSample(grassAlbedoTex, texSampler, uvScaled).rgb;
     let rockColor = textureSample(rockAlbedoTex, texSampler, uvScaled).rgb;
     
     // Slope-based splatting (rock on steep slopes, grass on flat ground)
-    let slope = 1.0 - in.normal.y;
-    let blend = clamp((slope - 0.2) * 3.0, 0.0, 1.0);
+    let slope = 1.0 - clamp(in.normal.y, 0.0, 1.0);
+    let blend = clamp((slope - 0.15) * 4.0, 0.0, 1.0);
     let albedo = mix(grassColor, rockColor, blend);
     
     // Lighting
@@ -64,19 +65,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let V = normalize(u.cameraPos - in.worldPos);
     
     let NdotL = max(dot(N, L), 0.0);
-    let ambient = vec3<f32>(0.25, 0.35, 0.45) * 0.4;
-    let diffuse = u.sunColor * NdotL;
+    let ambient = vec3<f32>(0.3, 0.4, 0.5) * 0.45;
+    let diffuse = u.sunColor * NdotL * 0.85;
     
-    // Specular
-    let H = normalize(L + V);
-    let NdotH = max(dot(N, H), 0.0);
-    let specular = pow(NdotH, 16.0) * (1.0 - blend) * 0.1;
-    
-    // Distance atmospheric haze
     let dist = length(u.cameraPos - in.worldPos);
-    let fogFactor = clamp((dist - 100.0) / 800.0, 0.0, 0.7);
-    let fogColor = vec3<f32>(0.6, 0.75, 0.9);
+    let fogFactor = clamp((dist - 150.0) / 900.0, 0.0, 0.65);
+    let fogColor = vec3<f32>(0.65, 0.78, 0.92);
     
-    let finalColor = mix((ambient + diffuse) * albedo + specular, fogColor, fogFactor);
-    return vec4<f32>(finalColor, 1.0);
+    let litColor = mix((ambient + diffuse) * albedo, fogColor, fogFactor);
+    return vec4<f32>(litColor, 1.0);
 }

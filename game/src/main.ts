@@ -237,7 +237,7 @@ async function bootstrap() {
         terrainRenderer.render(renderPass, camera, timeSec);
 
         // 3. Draw Drone GLB
-        modelRenderer.render(renderPass, camera, pos, rot, 0.4, timeSec);
+        modelRenderer.render(renderPass, camera, pos, rot, 1.5, timeSec);
 
         renderPass.end();
         gpu.device.queue.submit([commandEncoder.finish()]);

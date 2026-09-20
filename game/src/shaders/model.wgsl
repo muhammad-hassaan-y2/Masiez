@@ -4,7 +4,9 @@ struct Uniforms {
     cameraPos: vec3<f32>,
     time: f32,
     sunDir: vec3<f32>,
+    pad0: f32,
     sunColor: vec3<f32>,
+    pad1: f32,
     baseColorFactor: vec4<f32>,
     hasTexture: u32,
 };
@@ -32,7 +34,6 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     let worldPos4 = u.model * vec4<f32>(in.position, 1.0);
     out.worldPos = worldPos4.xyz;
     
-    // Normal transform
     let normal4 = u.model * vec4<f32>(in.normal, 0.0);
     out.normal = normalize(normal4.xyz);
     out.uv = in.uv;
@@ -53,12 +54,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let V = normalize(u.cameraPos - in.worldPos);
     
     let NdotL = max(dot(N, L), 0.0);
-    let ambient = vec3<f32>(0.2, 0.25, 0.35) * 0.5;
-    let diffuse = u.sunColor * NdotL;
+    let ambient = vec3<f32>(0.3, 0.35, 0.45) * 0.6;
+    let diffuse = u.sunColor * NdotL * 0.8;
     
     let H = normalize(L + V);
     let NdotH = max(dot(N, H), 0.0);
-    let specular = pow(NdotH, 32.0) * vec3<f32>(0.5, 0.5, 0.5);
+    let specular = pow(NdotH, 32.0) * vec3<f32>(0.6, 0.6, 0.6);
     
     let litColor = (ambient + diffuse) * baseColor.rgb + specular;
     return vec4<f32>(litColor, baseColor.a);

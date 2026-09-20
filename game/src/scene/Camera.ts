@@ -36,12 +36,26 @@ export class Mat4 {
         let y0 = z1 * x2 - z2 * x1;
         let y1 = z2 * x0 - z0 * x2;
         let y2 = z0 * x1 - z1 * x0;
-        len = 1 / Math.hypot(y0, y1, y2);
-        y0 *= len; y1 *= len; y2 *= len;
 
-        out[0] = x0; out[1] = y0; out[2] = z0; out[3] = 0;
-        out[4] = x1; out[5] = y1; out[6] = z1; out[7] = 0;
-        out[8] = x2; out[9] = y2; out[10] = z2; out[11] = 0;
+        // Column 0 (X axis in column-major order)
+        out[0] = x0;
+        out[1] = x1;
+        out[2] = x2;
+        out[3] = 0;
+
+        // Column 1 (Y axis in column-major order)
+        out[4] = y0;
+        out[5] = y1;
+        out[6] = y2;
+        out[7] = 0;
+
+        // Column 2 (Z axis in column-major order)
+        out[8] = z0;
+        out[9] = z1;
+        out[10] = z2;
+        out[11] = 0;
+
+        // Column 3 (Eye translation in column-major order)
         out[12] = -(x0 * eye[0] + x1 * eye[1] + x2 * eye[2]);
         out[13] = -(y0 * eye[0] + y1 * eye[1] + y2 * eye[2]);
         out[14] = -(z0 * eye[0] + z1 * eye[1] + z2 * eye[2]);
@@ -104,8 +118,8 @@ export class Mat4 {
 }
 
 export class Camera {
-    public position: [number, number, number] = [0, 5, 10];
-    public target: [number, number, number] = [0, 0, 0];
+    public position: [number, number, number] = [0, 20, 30];
+    public target: [number, number, number] = [0, 15, 0];
     public viewMatrix = Mat4.create();
     public projMatrix = Mat4.create();
     public viewProjMatrix = Mat4.create();
@@ -113,24 +127,31 @@ export class Camera {
 
     public fovRad: number = Math.PI / 3.0; // 60 deg
     public mode: 'CHASE' | 'FPV' | 'ORBIT' = 'CHASE';
+    private initialized: boolean = false;
 
     public update(dronePos: [number, number, number], droneYawDeg: number, aspect: number): void {
         const yawRad = droneYawDeg * (Math.PI / 180.0);
 
         if (this.mode === 'CHASE') {
-            const distance = 4.5;
-            const height = 1.8;
+            const distance = 8.0;
+            const height = 3.5;
             const targetX = dronePos[0] - Math.sin(yawRad) * distance;
             const targetZ = dronePos[2] - Math.cos(yawRad) * distance;
             const targetY = dronePos[1] + height;
 
-            // Spring follow smoothing
-            this.position[0] += (targetX - this.position[0]) * 0.15;
-            this.position[1] += (targetY - this.position[1]) * 0.15;
-            this.position[2] += (targetZ - this.position[2]) * 0.15;
+            if (!this.initialized) {
+                this.position[0] = targetX;
+                this.position[1] = targetY;
+                this.position[2] = targetZ;
+                this.initialized = true;
+            } else {
+                this.position[0] += (targetX - this.position[0]) * 0.15;
+                this.position[1] += (targetY - this.position[1]) * 0.15;
+                this.position[2] += (targetZ - this.position[2]) * 0.15;
+            }
 
             this.target[0] = dronePos[0];
-            this.target[1] = dronePos[1] + 0.5;
+            this.target[1] = dronePos[1] + 0.3;
             this.target[2] = dronePos[2];
         } else if (this.mode === 'FPV') {
             this.position[0] = dronePos[0];
