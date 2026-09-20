@@ -79,13 +79,10 @@ export class ModelRenderer {
             },
         });
 
-        // Create fallback procedural drone box & rotor geometry
         this.createFallbackDrone();
     }
 
     private createFallbackDrone(): void {
-        // Simple procedural quadcopter mesh as fallback/base
-        // Center body + 4 arms + 4 rotors
         const vertices: number[] = [];
         const indices: number[] = [];
 
@@ -93,7 +90,6 @@ export class ModelRenderer {
             const hx = sx * 0.5, hy = sy * 0.5, hz = sz * 0.5;
             const startIdx = vertices.length / 8;
             
-            // 8 corners
             const corners = [
                 [cx - hx, cy - hy, cz - hz],
                 [cx + hx, cy - hy, cz - hz],
@@ -105,7 +101,6 @@ export class ModelRenderer {
                 [cx - hx, cy + hy, cz + hz],
             ];
 
-            // 6 faces
             const faces = [
                 { idx: [0, 1, 2, 3], norm: [0, 0, -1] },
                 { idx: [5, 4, 7, 6], norm: [0, 0, 1] },
@@ -120,25 +115,25 @@ export class ModelRenderer {
                 const base = vCount;
                 for (let i = 0; i < 4; ++i) {
                     const c = corners[face.idx[i]];
-                    vertices.push(c[0], c[1], c[2], face.norm[0], face.norm[1], face.norm[2], i === 0 || i === 3 ? 0 : 1, i < 2 ? 0 : 1);
+                    vertices.push(c[0], c[1], c[2], face.norm[0], face.norm[1], face.norm[2], (i === 0 || i === 3) ? 0 : 1, i < 2 ? 0 : 1);
                 }
                 indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
                 vCount += 4;
             }
         }
 
-        // Center fuselage
-        addBox(0, 0, 0, 0.4, 0.08, 0.4);
-        // Diagonal arms
-        addBox(0.25, 0.02, 0.25, 0.04, 0.03, 0.4);
-        addBox(-0.25, 0.02, 0.25, 0.04, 0.03, 0.4);
-        addBox(0.25, 0.02, -0.25, 0.04, 0.03, 0.4);
-        addBox(-0.25, 0.02, -0.25, 0.04, 0.03, 0.4);
-        // 4 Rotors
-        addBox(0.35, 0.05, 0.35, 0.25, 0.01, 0.03);
-        addBox(-0.35, 0.05, 0.35, 0.25, 0.01, 0.03);
-        addBox(0.35, 0.05, -0.35, 0.25, 0.01, 0.03);
-        addBox(-0.35, 0.05, -0.35, 0.25, 0.01, 0.03);
+        // Center chassis (dark body)
+        addBox(0, 0, 0, 0.5, 0.1, 0.5);
+        // 4 diagonal arm extensions
+        addBox(0.35, 0.03, 0.35, 0.08, 0.04, 0.45);
+        addBox(-0.35, 0.03, 0.35, 0.08, 0.04, 0.45);
+        addBox(0.35, 0.03, -0.35, 0.08, 0.04, 0.45);
+        addBox(-0.35, 0.03, -0.35, 0.08, 0.04, 0.45);
+        // 4 rotor blades
+        addBox(0.45, 0.08, 0.45, 0.35, 0.01, 0.04);
+        addBox(-0.45, 0.08, 0.45, 0.35, 0.01, 0.04);
+        addBox(0.45, 0.08, -0.45, 0.35, 0.01, 0.04);
+        addBox(-0.45, 0.08, -0.45, 0.35, 0.01, 0.04);
 
         const vertexBuffer = this.ctx.createBuffer(new Float32Array(vertices), GPUBufferUsage.VERTEX);
         const indexBuffer = this.ctx.createBuffer(new Uint32Array(indices), GPUBufferUsage.INDEX);
@@ -157,7 +152,7 @@ export class ModelRenderer {
             indexBuffer,
             indexCount: indices.length,
             vertexCount: vertices.length / 8,
-            baseColorFactor: [0.15, 0.2, 0.25, 1.0],
+            baseColorFactor: [0.9, 0.2, 0.1, 1.0], // High visibility red/orange
             bindGroup,
         });
     }
@@ -165,18 +160,12 @@ export class ModelRenderer {
     public async loadGLB(url: string): Promise<boolean> {
         try {
             const res = await fetch(url);
-            if (!res.ok) {
-                console.warn(`Could not load GLB from ${url}: status ${res.status}`);
-                return false;
-            }
+            if (!res.ok) return false;
             const arrayBuffer = await res.arrayBuffer();
             const dataView = new DataView(arrayBuffer);
 
             const magic = dataView.getUint32(0, true);
-            if (magic !== 0x46546C67) {
-                console.warn("Invalid GLB magic header");
-                return false;
-            }
+            if (magic !== 0x46546C67) return false;
 
             const totalLength = dataView.getUint32(8, true);
             let offset = 12;
@@ -190,8 +179,7 @@ export class ModelRenderer {
                 const chunkData = arrayBuffer.slice(offset + 8, offset + 8 + chunkLength);
 
                 if (chunkType === 0x4E4F534A) {
-                    const jsonStr = new TextDecoder().decode(chunkData);
-                    jsonChunk = JSON.parse(jsonStr);
+                    jsonChunk = JSON.parse(new TextDecoder().decode(chunkData));
                 } else if (chunkType === 0x004E4942) {
                     binBuffer = chunkData;
                 }
@@ -283,12 +271,12 @@ export class ModelRenderer {
 
             if (loadedPrimitives.length > 0) {
                 this.primitives = loadedPrimitives;
-                console.log(`Loaded Drone GLB: ${this.primitives.length} primitives replaced procedural fallback.`);
+                console.log(`Loaded Drone GLB: ${this.primitives.length} primitives.`);
                 return true;
             }
             return false;
         } catch (e) {
-            console.warn("Could not parse GLB, using procedural drone:", e);
+            console.warn("Using procedural drone mesh fallback:", e);
             return false;
         }
     }
@@ -298,7 +286,7 @@ export class ModelRenderer {
         camera: Camera,
         position: [number, number, number],
         rotationDeg: [number, number, number],
-        scale: number = 1.0,
+        scale: number = 2.0,
         time: number = 0
     ): void {
         if (this.primitives.length === 0) return;
@@ -329,35 +317,35 @@ export class ModelRenderer {
         modelMat[14] = position[2];
         modelMat[15] = 1.0;
 
+        const uniforms = new Float32Array(64);
+        uniforms.set(camera.viewProjMatrix, 0);
+        uniforms.set(modelMat, 16);
+        uniforms[32] = camera.position[0];
+        uniforms[33] = camera.position[1];
+        uniforms[34] = camera.position[2];
+        uniforms[35] = time;
+
+        uniforms[36] = 0.6;
+        uniforms[37] = 0.8;
+        uniforms[38] = 0.4;
+        uniforms[39] = 0.0;
+
+        uniforms[40] = 1.0;
+        uniforms[41] = 0.95;
+        uniforms[42] = 0.85;
+        uniforms[43] = 0.0;
+
+        uniforms[44] = this.primitives[0].baseColorFactor[0];
+        uniforms[45] = this.primitives[0].baseColorFactor[1];
+        uniforms[46] = this.primitives[0].baseColorFactor[2];
+        uniforms[47] = this.primitives[0].baseColorFactor[3];
+        uniforms[48] = 0;
+
+        this.ctx.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
+
         pass.setPipeline(this.pipeline);
 
         for (const prim of this.primitives) {
-            const uniforms = new Float32Array(64); // 256 bytes
-            uniforms.set(camera.viewProjMatrix, 0); // offset 0..63 (0..15)
-            uniforms.set(modelMat, 16);             // offset 64..127 (16..31)
-            uniforms[32] = camera.position[0];      // offset 128..139 (32..34)
-            uniforms[33] = camera.position[1];
-            uniforms[34] = camera.position[2];
-            uniforms[35] = time;                    // offset 140..143 (35)
-
-            uniforms[36] = 0.6; // sunDir offset 144..155 (36..38)
-            uniforms[37] = 0.8;
-            uniforms[38] = 0.4;
-            uniforms[39] = 0.0;
-
-            uniforms[40] = 1.0; // sunColor offset 160..171 (40..42)
-            uniforms[41] = 0.95;
-            uniforms[42] = 0.85;
-            uniforms[43] = 0.0;
-
-            uniforms[44] = prim.baseColorFactor[0]; // baseColorFactor offset 176..191 (44..47)
-            uniforms[45] = prim.baseColorFactor[1];
-            uniforms[46] = prim.baseColorFactor[2];
-            uniforms[47] = prim.baseColorFactor[3];
-            uniforms[48] = 0; // hasTexture
-
-            this.ctx.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
-
             pass.setBindGroup(0, prim.bindGroup!);
             pass.setVertexBuffer(0, prim.vertexBuffer);
 
