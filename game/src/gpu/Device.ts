@@ -1,0 +1,106 @@
+export class GPUDeviceContext {
+    public device!: GPUDevice;
+    public adapter!: GPUAdapter;
+    public context!: GPUCanvasContext;
+    public format!: GPUTextureFormat;
+    public depthFormat: GPUTextureFormat = 'depth24plus';
+    public depthTexture!: GPUTexture;
+    public canvas: HTMLCanvasElement;
+
+    constructor(canvas: HTMLCanvasElement) {
+        this.canvas = canvas;
+    }
+
+    public async init(): Promise<boolean> {
+        if (!navigator.gpu) {
+            console.error("WebGPU is not supported on this browser.");
+            return false;
+        }
+
+        const adapter = await navigator.gpu.requestAdapter({
+            powerPreference: 'high-performance'
+        });
+        if (!adapter) {
+            console.error("No suitable GPUAdapter found.");
+            return false;
+        }
+        this.adapter = adapter;
+
+        this.device = await adapter.requestDevice();
+        const ctx = this.canvas.getContext('webgpu');
+        if (!ctx) {
+            console.error("Failed to get WebGPU canvas context.");
+            return false;
+        }
+        this.context = ctx;
+
+        this.format = navigator.gpu.getPreferredCanvasFormat();
+        this.resize();
+
+        window.addEventListener('resize', () => this.resize());
+        return true;
+    }
+
+    public resize(): void {
+        const width = Math.max(1, window.innerWidth);
+        const height = Math.max(1, window.innerHeight);
+
+        this.canvas.width = width;
+        this.canvas.height = height;
+
+        this.context.configure({
+            device: this.device,
+            format: this.format,
+            alphaMode: 'opaque',
+        });
+
+        if (this.depthTexture) {
+            this.depthTexture.destroy();
+        }
+
+        this.depthTexture = this.device.createTexture({
+            size: [width, height, 1],
+            format: this.depthFormat,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+    }
+
+    public createBuffer(data: ArrayBufferView, usage: GPUBufferUsageFlags): GPUBuffer {
+        const buffer = this.device.createBuffer({
+            size: Math.ceil(data.byteLength / 4) * 4,
+            usage,
+            mappedAtCreation: true,
+        });
+        if (data instanceof Float32Array) {
+            new Float32Array(buffer.getMappedRange()).set(data);
+        } else if (data instanceof Uint16Array) {
+            new Uint16Array(buffer.getMappedRange()).set(data);
+        } else if (data instanceof Uint32Array) {
+            new Uint32Array(buffer.getMappedRange()).set(data);
+        } else if (data instanceof Uint8Array) {
+            new Uint8Array(buffer.getMappedRange()).set(data);
+        }
+        buffer.unmap();
+        return buffer;
+    }
+
+    public async loadTexture(url: string): Promise<GPUTexture> {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const imgBitmap = await createImageBitmap(blob);
+
+        const texture = this.device.createTexture({
+            size: [imgBitmap.width, imgBitmap.height, 1],
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+
+        this.device.queue.copyExternalImageToTexture(
+            { source: imgBitmap },
+            { texture },
+            [imgBitmap.width, imgBitmap.height]
+        );
+
+        return texture;
+    }
+}
