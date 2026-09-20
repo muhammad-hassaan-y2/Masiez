@@ -32,7 +32,6 @@ export class ModelRenderer {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
-        // 1x1 white default texture
         this.defaultTexture = device.createTexture({
             size: [1, 1, 1],
             format: 'rgba8unorm',
@@ -86,7 +85,7 @@ export class ModelRenderer {
         const vertices: number[] = [];
         const indices: number[] = [];
 
-        function addBox(cx: number, cy: number, cz: number, sx: number, sy: number, sz: number) {
+        function addBox(cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, r: number = 0.2, g: number = 0.25, b: number = 0.3) {
             const hx = sx * 0.5, hy = sy * 0.5, hz = sz * 0.5;
             const startIdx = vertices.length / 8;
             
@@ -122,18 +121,18 @@ export class ModelRenderer {
             }
         }
 
-        // Center chassis (dark body)
-        addBox(0, 0, 0, 0.5, 0.1, 0.5);
+        // Center carbon fuselage
+        addBox(0, 0.05, 0, 0.4, 0.08, 0.4);
         // 4 diagonal arm extensions
-        addBox(0.35, 0.03, 0.35, 0.08, 0.04, 0.45);
-        addBox(-0.35, 0.03, 0.35, 0.08, 0.04, 0.45);
-        addBox(0.35, 0.03, -0.35, 0.08, 0.04, 0.45);
-        addBox(-0.35, 0.03, -0.35, 0.08, 0.04, 0.45);
-        // 4 rotor blades
-        addBox(0.45, 0.08, 0.45, 0.35, 0.01, 0.04);
-        addBox(-0.45, 0.08, 0.45, 0.35, 0.01, 0.04);
-        addBox(0.45, 0.08, -0.45, 0.35, 0.01, 0.04);
-        addBox(-0.45, 0.08, -0.45, 0.35, 0.01, 0.04);
+        addBox(0.3, 0.04, 0.3, 0.06, 0.03, 0.35);
+        addBox(-0.3, 0.04, 0.3, 0.06, 0.03, 0.35);
+        addBox(0.3, 0.04, -0.3, 0.06, 0.03, 0.35);
+        addBox(-0.3, 0.04, -0.3, 0.06, 0.03, 0.35);
+        // 4 red/black rotor blades
+        addBox(0.42, 0.1, 0.42, 0.35, 0.01, 0.04);
+        addBox(-0.42, 0.1, 0.42, 0.35, 0.01, 0.04);
+        addBox(0.42, 0.1, -0.42, 0.35, 0.01, 0.04);
+        addBox(-0.42, 0.1, -0.42, 0.35, 0.01, 0.04);
 
         const vertexBuffer = this.ctx.createBuffer(new Float32Array(vertices), GPUBufferUsage.VERTEX);
         const indexBuffer = this.ctx.createBuffer(new Uint32Array(indices), GPUBufferUsage.INDEX);
@@ -147,14 +146,14 @@ export class ModelRenderer {
             ],
         });
 
-        this.primitives.push({
+        this.primitives = [{
             vertexBuffer,
             indexBuffer,
             indexCount: indices.length,
             vertexCount: vertices.length / 8,
-            baseColorFactor: [0.9, 0.2, 0.1, 1.0], // High visibility red/orange
+            baseColorFactor: [0.95, 0.25, 0.1, 1.0], // High visibility orange-red
             bindGroup,
-        });
+        }];
     }
 
     public async loadGLB(url: string): Promise<boolean> {
@@ -195,6 +194,32 @@ export class ModelRenderer {
                 return { acc, slice: binBuffer!.slice(byteOffset, byteOffset + bv.byteLength) };
             };
 
+            // First pass: compute global bounding box for automatic centering & normalization
+            let minX = Infinity, minY = Infinity, minZ = Infinity;
+            let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+            for (const mesh of jsonChunk.meshes || []) {
+                for (const prim of mesh.primitives || []) {
+                    if (prim.attributes.POSITION === undefined) continue;
+                    const posInfo = getAccessorData(prim.attributes.POSITION);
+                    const posArray = new Float32Array(posInfo.slice);
+                    for (let i = 0; i < posInfo.acc.count; ++i) {
+                        const px = posArray[i * 3 + 0];
+                        const py = posArray[i * 3 + 1];
+                        const pz = posArray[i * 3 + 2];
+                        if (px < minX) minX = px; if (px > maxX) maxX = px;
+                        if (py < minY) minY = py; if (py > maxY) maxY = py;
+                        if (pz < minZ) minZ = pz; if (pz > maxZ) maxZ = pz;
+                    }
+                }
+            }
+
+            const centerX = (minX + maxX) * 0.5;
+            const centerY = (minY + maxY) * 0.5;
+            const centerZ = (minZ + maxZ) * 0.5;
+            const maxDim = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 0.001);
+            const normScale = 1.0 / maxDim; // Normalize to 1.0 unit diameter
+
             const loadedPrimitives: PrimitiveMesh[] = [];
 
             for (const mesh of jsonChunk.meshes || []) {
@@ -212,9 +237,10 @@ export class ModelRenderer {
                     const interleaved = new Float32Array(count * 8);
 
                     for (let i = 0; i < count; ++i) {
-                        interleaved[i * 8 + 0] = posArray[i * 3 + 0];
-                        interleaved[i * 8 + 1] = posArray[i * 3 + 1];
-                        interleaved[i * 8 + 2] = posArray[i * 3 + 2];
+                        // Centered & normalized positions
+                        interleaved[i * 8 + 0] = (posArray[i * 3 + 0] - centerX) * normScale;
+                        interleaved[i * 8 + 1] = (posArray[i * 3 + 1] - centerY) * normScale;
+                        interleaved[i * 8 + 2] = (posArray[i * 3 + 2] - centerZ) * normScale;
 
                         interleaved[i * 8 + 3] = normArray ? normArray[i * 3 + 0] : 0.0;
                         interleaved[i * 8 + 4] = normArray ? normArray[i * 3 + 1] : 1.0;
@@ -241,7 +267,7 @@ export class ModelRenderer {
                         }
                     }
 
-                    let baseColor: [number, number, number, number] = [0.8, 0.2, 0.2, 1.0];
+                    let baseColor: [number, number, number, number] = [0.85, 0.3, 0.15, 1.0];
                     if (prim.material !== undefined && jsonChunk.materials?.[prim.material]) {
                         const mat = jsonChunk.materials[prim.material];
                         if (mat.pbrMetallicRoughness?.baseColorFactor) {
@@ -271,7 +297,7 @@ export class ModelRenderer {
 
             if (loadedPrimitives.length > 0) {
                 this.primitives = loadedPrimitives;
-                console.log(`Loaded Drone GLB: ${this.primitives.length} primitives.`);
+                console.log(`Loaded and normalized Drone GLB: ${this.primitives.length} primitives.`);
                 return true;
             }
             return false;
@@ -286,7 +312,7 @@ export class ModelRenderer {
         camera: Camera,
         position: [number, number, number],
         rotationDeg: [number, number, number],
-        scale: number = 2.0,
+        scale: number = 1.0,
         time: number = 0
     ): void {
         if (this.primitives.length === 0) return;

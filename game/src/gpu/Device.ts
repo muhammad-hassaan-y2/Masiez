@@ -14,6 +14,11 @@ export class GPUDeviceContext {
     public async init(): Promise<boolean> {
         if (!navigator.gpu) {
             console.error("WebGPU is not supported on this browser.");
+            const errEl = document.getElementById('error-console');
+            if (errEl) {
+                errEl.style.display = 'block';
+                errEl.innerHTML += `<div><b>Error:</b> WebGPU is not supported on this browser. Use Chrome 113+ or Edge 113+.</div>`;
+            }
             return false;
         }
 
@@ -27,6 +32,16 @@ export class GPUDeviceContext {
         this.adapter = adapter;
 
         this.device = await adapter.requestDevice();
+
+        this.device.addEventListener('uncapturederror', (event: any) => {
+            console.error('WebGPU Uncaptured Error:', event.error);
+            const errEl = document.getElementById('error-console');
+            if (errEl) {
+                errEl.style.display = 'block';
+                errEl.innerHTML += `<div><b>WebGPU Error:</b> ${event.error?.message || event.error}</div>`;
+            }
+        });
+
         const ctx = this.canvas.getContext('webgpu');
         if (!ctx) {
             console.error("Failed to get WebGPU canvas context.");
