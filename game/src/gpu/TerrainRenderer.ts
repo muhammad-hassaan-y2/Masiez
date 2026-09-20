@@ -63,8 +63,6 @@ export class TerrainRenderer {
         const normalmapTex = await this.ctx.loadTexture('/assets/terrain/normalmap.png', [128, 128, 255]);
         const grassAlbedoTex = await this.ctx.loadTexture('/assets/textures/grass/albedo.jpg', [70, 130, 50]);
         const rockAlbedoTex = await this.ctx.loadTexture('/assets/textures/rock/albedo.jpg', [120, 110, 100]);
-        const grassNormalTex = await this.ctx.loadTexture('/assets/textures/grass/normal.jpg', [128, 128, 255]);
-        const rockNormalTex = await this.ctx.loadTexture('/assets/textures/rock/normal.jpg', [128, 128, 255]);
 
         this.sampler = device.createSampler({
             magFilter: 'linear',
@@ -110,9 +108,7 @@ export class TerrainRenderer {
                 { binding: 2, resource: normalmapTex.createView() },
                 { binding: 3, resource: grassAlbedoTex.createView() },
                 { binding: 4, resource: rockAlbedoTex.createView() },
-                { binding: 5, resource: grassNormalTex.createView() },
-                { binding: 6, resource: rockNormalTex.createView() },
-                { binding: 7, resource: this.sampler },
+                { binding: 5, resource: this.sampler },
             ],
         });
     }

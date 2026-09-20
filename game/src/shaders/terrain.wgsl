@@ -13,9 +13,7 @@ struct Uniforms {
 @group(0) @binding(2) var normalmapTex: texture_2d<f32>;
 @group(0) @binding(3) var grassAlbedoTex: texture_2d<f32>;
 @group(0) @binding(4) var rockAlbedoTex: texture_2d<f32>;
-@group(0) @binding(5) var grassNormalTex: texture_2d<f32>;
-@group(0) @binding(6) var rockNormalTex: texture_2d<f32>;
-@group(0) @binding(7) var texSampler: sampler;
+@group(0) @binding(5) var texSampler: sampler;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
