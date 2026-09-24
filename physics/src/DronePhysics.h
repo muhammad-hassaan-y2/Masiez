@@ -17,8 +17,8 @@ struct DroneParams {
     float armLength{0.25f};     // m
     float thrustCoeff{1.0e-5f}; // N / RPM^2
     float torqueCoeff{1.0e-7f}; // Nm / RPM^2
-    float dragCoeffXY{0.5f};
-    float dragCoeffZ{0.8f};
+    float dragCoeffXY{0.06f};   // Low aerodynamic drag for fast high-speed flight
+    float dragCoeffZ{0.25f};
     float inertiaX{0.015f};     // kg m^2
     float inertiaY{0.015f};
     float inertiaZ{0.025f};

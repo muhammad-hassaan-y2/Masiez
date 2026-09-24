@@ -70,37 +70,31 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
 
     float targetRollDeg = 0.0f;
     float targetPitchDeg = 0.0f;
-    float targetYawDeg = rot.z;
+    float targetYawDeg = inYaw; // inYaw is the mouse-directed target heading
     float baseThrottleRPM = 0.0f;
 
-    const float maxTiltDeg = 20.0f;
+    const float maxTiltDeg = 22.0f;
 
     if (mode == Mode::MANUAL) {
-        // W/S tilts Pitch (Forward/Backward), A/D tilts Roll (Left/Right)
+        // WASD flight: fast responsive tilt
         targetPitchDeg = inPitch * maxTiltDeg;
         targetRollDeg  = inRoll  * maxTiltDeg;
-        targetYawDeg   = inYaw; // inYaw is the mouse-directed target heading
 
         bool hasMovement = (std::abs(inPitch) > 0.05f || std::abs(inRoll) > 0.05f);
 
         if (pos.y < 0.35f && inThrottle <= 0.0f && !hasMovement) {
-            // Idle on ground when keys are released
+            // Resting on ground when Shift is not pressed
             baseThrottleRPM = 0.0f;
-        } else if (pos.y < 0.35f && inThrottle > 0.0f) {
-            // Holding Shift on ground -> Takeoff thrust
-            baseThrottleRPM = hoverRPM + 250.0f;
+        } else if (inThrottle > 0.0f) {
+            // Shift pressed -> Climb up fast!
+            baseThrottleRPM = hoverRPM + 350.0f; // ~956 RPM (>36 N thrust, fast climb!)
         } else {
-            // In flight:
-            // Tilt compensation maintains altitude when banking or pitching
-            float cr = std::cos(rot.x * (M_PI / 180.0f));
-            float cp = std::cos(rot.y * (M_PI / 180.0f));
-            float tiltComp = 1.0f / std::max(0.6f, std::abs(cr * cp));
-
-            baseThrottleRPM = (hoverRPM * tiltComp) + (inThrottle * 300.0f);
+            // Shift not pressed -> Smooth descent down towards ground!
+            baseThrottleRPM = hoverRPM - 180.0f; // ~426 RPM (<7.2 N thrust, gravity pulls down!)
         }
 
         // Direct smooth attitude tracking for snappy game-feel
-        float blendAttitude = std::min(1.0f, dt * 12.0f);
+        float blendAttitude = std::min(1.0f, dt * 14.0f);
         float errRoll  = targetRollDeg - rot.x;
         float errPitch = targetPitchDeg - rot.y;
 
@@ -117,7 +111,7 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
         Vec3& mutableRot = const_cast<Vec3&>(physics.getRotation());
         mutableRot.x += errRoll * blendAttitude;
         mutableRot.y += errPitch * blendAttitude;
-        mutableRot.z += errYaw * std::min(1.0f, dt * 18.0f);
+        mutableRot.z += errYaw * std::min(1.0f, dt * 20.0f);
 
         outRPMs[0] = baseThrottleRPM;
         outRPMs[1] = baseThrottleRPM;
