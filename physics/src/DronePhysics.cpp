@@ -63,10 +63,14 @@ void DronePhysics::step(float dt, float (*groundHeightFn)(float x, float z)) {
     float sr = std::sin(rollRad);
 
     // World thrust components
+    // Body up vector [sr, cp * cr, sp] rotated by yaw around vertical Y axis:
+    // Forward (+Z) component when pitch > 0: (cy * sp - sy * sr) * totalThrust
+    // Rightward (+X) component when roll > 0: (sy * sp + cy * sr) * totalThrust
+    // Vertical (+Y) component: (cp * cr) * totalThrust
     Vec3 thrustWorld;
-    thrustWorld.x = totalThrust * (sy * sr + cy * sp * cr);
+    thrustWorld.x = totalThrust * (cy * sr + sy * sp * cr);
     thrustWorld.y = totalThrust * (cp * cr);
-    thrustWorld.z = totalThrust * (-cy * sr + sy * sp * cr);
+    thrustWorld.z = totalThrust * (-sy * sr + cy * sp * cr);
 
     // Gravity: (0, -9.81 * mass, 0)
     Vec3 gravity = {0.0f, -9.81f * params.mass, 0.0f};

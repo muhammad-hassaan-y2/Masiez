@@ -81,41 +81,35 @@ export class InputManager {
     }
 
     public update(): void {
-        const shiftPressed = this.keys['ShiftLeft'] || this.keys['ShiftRight'];
-        const ctrlPressed  = this.keys['ControlLeft'] || this.keys['ControlRight'];
-        const spacePressed = this.keys['Space'];
+        const shiftPressed = this.keys['ShiftLeft'] || this.keys['ShiftRight'] || this.keys['Space'];
+        const ctrlPressed  = this.keys['ControlLeft'] || this.keys['ControlRight'] || this.keys['KeyC'];
 
-        // Throttle / Altitude: Shift or Space to fly up, Ctrl or C to fly down
+        // Shift (or Space) = flying up, Ctrl (or C) = flying down, released = 0
         let th = 0;
-        if (shiftPressed || spacePressed) th += 1;
-        if (ctrlPressed || this.keys['KeyC']) th -= 1;
+        if (shiftPressed) {
+            th = 1.0;
+        } else if (ctrlPressed) {
+            th = -1.0;
+        }
         this.throttle = th;
 
         // Pitch: W or ArrowUp (Forward), S or ArrowDown (Backward)
         let p = 0;
-        if (this.keys['KeyW'] || this.keys['ArrowUp']) p += 1;
-        if (this.keys['KeyS'] || this.keys['ArrowDown']) p -= 1;
+        if (this.keys['KeyW'] || this.keys['ArrowUp']) p += 1.0;
+        if (this.keys['KeyS'] || this.keys['ArrowDown']) p -= 1.0;
         this.pitch = p;
 
-        // Roll: D or ArrowRight (Roll Right), A or ArrowLeft (Roll Left)
+        // Roll: D or ArrowRight (Rightward), A or ArrowLeft (Leftward)
         let r = 0;
-        if (this.keys['KeyD'] || this.keys['ArrowRight']) r += 1;
-        if (this.keys['KeyA'] || this.keys['ArrowLeft']) r -= 1;
+        if (this.keys['KeyD'] || this.keys['ArrowRight']) r += 1.0;
+        if (this.keys['KeyA'] || this.keys['ArrowLeft']) r -= 1.0;
         this.roll = r;
 
         // Yaw: E (Turn Right), Q (Turn Left)
         let y = 0;
-        if (this.keys['KeyE']) y += 1;
-        if (this.keys['KeyQ']) y -= 1;
+        if (this.keys['KeyE']) y += 1.0;
+        if (this.keys['KeyQ']) y -= 1.0;
         this.yaw = y;
-
-        // Mouse steering when pointer locked
-        if (this.isPointerLocked) {
-            const mouseSteerX = this.mouseDeltaX * 0.08;
-            if (Math.abs(mouseSteerX) > 0.01) {
-                this.yaw += Math.max(-1, Math.min(1, mouseSteerX));
-            }
-        }
 
         // Gamepad support (Mode 2 standard)
         const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];

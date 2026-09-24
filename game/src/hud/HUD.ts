@@ -91,11 +91,10 @@ export class HUD {
             white-space: nowrap;
         `;
         controlsHint.innerHTML = `
-            <span style="color:#00ffcc;"><b>[WASD]</b> FLY / MOVE</span>
-            <span style="color:#ffcc00;"><b>[SPACE / SHIFT]</b> FLY UP</span>
-            <span style="color:#ff9999;"><b>[CTRL / C]</b> FLY DOWN</span>
-            <span><b>[Q / E]</b> ROTATE YAW</span>
-            <span><b>[CLICK / DRAG]</b> MOUSE LOOK</span>
+            <span style="color:#00ffcc;"><b>[HOLD SHIFT]</b> FLY UP</span>
+            <span style="color:#ffcc00;"><b>[WASD]</b> FORWARD / BACK / LEFT / RIGHT</span>
+            <span style="color:#ff9999;"><b>[MOUSE]</b> DIRECT & STEER</span>
+            <span><b>[CTRL / C]</b> DESCEND</span>
             <span><b>[WHEEL]</b> ZOOM</span>
             <span><b>[TAB]</b> AUTOPILOT</span>
         `;

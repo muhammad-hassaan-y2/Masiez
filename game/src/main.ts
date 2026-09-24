@@ -137,7 +137,12 @@ async function bootstrap() {
         const zoom = input.consumeMouseZoom();
         camera.applyMouseDelta(mouse.dx, mouse.dy, zoom);
 
-        physics.setManualInput(input.throttle, input.pitch, input.roll, input.yaw);
+        let yawInput = input.yaw;
+        if (Math.abs(mouse.dx) > 0.05) {
+            yawInput += Math.max(-1.0, Math.min(1.0, mouse.dx * 0.08));
+        }
+
+        physics.setManualInput(input.throttle, input.pitch, input.roll, yawInput);
 
         // Fixed-timestep C++ simulation steps
         physicsAccumulator += deltaSec;
