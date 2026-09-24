@@ -258,7 +258,7 @@ async function bootstrap() {
         structuresRenderer.render(renderPass, camera, timeSec);
 
         // 4. Draw Drone 3D Model
-        modelRenderer.render(renderPass, camera, pos, rot, 1.5, timeSec);
+        modelRenderer.render(renderPass, camera, pos, rot, 2.0, timeSec);
 
         renderPass.end();
         gpu.device.queue.submit([commandEncoder.finish()]);
