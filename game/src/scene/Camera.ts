@@ -144,19 +144,19 @@ export class Camera {
 
     // Interactive mouse look offsets
     public mouseOrbitYaw: number = 0;   // radians
-    public mouseOrbitPitch: number = 0.35; // radians (~20 deg down)
-    public baseDistance: number = 5.0;
+    public mouseOrbitPitch: number = 0.28; // radians (~16 deg down, perfect angle for viewing drone & horizon)
+    public baseDistance: number = 3.5; // Closer, crisp view of the custom drone
 
     private initialized: boolean = false;
 
     public applyMouseDelta(dx: number, dy: number, zoomDelta: number): void {
-        const sensitivity = 0.004;
+        const sensitivity = 0.0035;
         this.mouseOrbitYaw += dx * sensitivity;
         this.mouseOrbitPitch += dy * sensitivity;
 
         // Clamp pitch to avoid gimbal flipping (-85 deg to +85 deg)
         this.mouseOrbitPitch = Math.max(-1.4, Math.min(1.4, this.mouseOrbitPitch));
-        this.baseDistance = Math.max(1.5, Math.min(25.0, this.baseDistance + zoomDelta));
+        this.baseDistance = Math.max(1.5, Math.min(20.0, this.baseDistance + zoomDelta));
     }
 
     public update(dronePos: [number, number, number], droneYawDeg: number, aspect: number): void {
@@ -169,8 +169,8 @@ export class Camera {
 
             // Ground height under candidate camera position
             const camGroundY = getTerrainHeight(targetX, targetZ);
-            // Minimum camera Y is 0.8m above terrain to prevent clipping into hills or ground
-            const targetY = Math.max(camGroundY + 0.8, dronePos[1] + distVert);
+            // Minimum camera Y is 0.7m above terrain to prevent clipping into hills or ground
+            const targetY = Math.max(camGroundY + 0.7, dronePos[1] + distVert);
 
             if (!this.initialized) {
                 this.position[0] = targetX;
@@ -178,17 +178,20 @@ export class Camera {
                 this.position[2] = targetZ;
                 this.initialized = true;
             } else {
-                this.position[0] += (targetX - this.position[0]) * 0.35;
-                this.position[1] += (targetY - this.position[1]) * 0.35;
-                this.position[2] += (targetZ - this.position[2]) * 0.35;
+                // Smooth responsive camera follow
+                const followSpeed = 0.45;
+                this.position[0] += (targetX - this.position[0]) * followSpeed;
+                this.position[1] += (targetY - this.position[1]) * followSpeed;
+                this.position[2] += (targetZ - this.position[2]) * followSpeed;
             }
 
             // Guarantee camera never penetrates ground after interpolation
             const actualGroundY = getTerrainHeight(this.position[0], this.position[2]);
-            this.position[1] = Math.max(actualGroundY + 0.8, this.position[1]);
+            this.position[1] = Math.max(actualGroundY + 0.7, this.position[1]);
 
+            // Keep view strictly centered on the drone
             this.target[0] = dronePos[0];
-            this.target[1] = Math.max(dronePos[1] + 0.3, actualGroundY + 0.3);
+            this.target[1] = dronePos[1] + 0.15;
             this.target[2] = dronePos[2];
         } else if (this.mode === 'FPV') {
             this.position[0] = dronePos[0];

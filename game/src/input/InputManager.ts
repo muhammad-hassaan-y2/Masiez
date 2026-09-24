@@ -44,6 +44,9 @@ export class InputManager {
         });
 
         // Mouse Drag & Pointer Lock
+        let lastX = 0;
+        let lastY = 0;
+
         canvas.addEventListener('click', () => {
             if (!document.pointerLockElement) {
                 canvas.requestPointerLock?.();
@@ -55,8 +58,10 @@ export class InputManager {
         });
 
         window.addEventListener('mousedown', (e) => {
-            if (e.target === canvas) {
+            if (e.target === canvas || (e.target as HTMLElement).tagName === 'CANVAS') {
                 this.isMouseDown = true;
+                lastX = e.clientX;
+                lastY = e.clientY;
             }
         });
 
@@ -65,15 +70,22 @@ export class InputManager {
         });
 
         window.addEventListener('mousemove', (e) => {
-            if (this.isPointerLocked || this.isMouseDown) {
-                this.mouseDeltaX += e.movementX;
-                this.mouseDeltaY += e.movementY;
+            if (this.isPointerLocked) {
+                this.mouseDeltaX += e.movementX || 0;
+                this.mouseDeltaY += e.movementY || 0;
+            } else if (this.isMouseDown) {
+                const dx = (e.movementX !== undefined && Math.abs(e.movementX) < 150) ? e.movementX : (e.clientX - lastX);
+                const dy = (e.movementY !== undefined && Math.abs(e.movementY) < 150) ? e.movementY : (e.clientY - lastY);
+                this.mouseDeltaX += dx;
+                this.mouseDeltaY += dy;
+                lastX = e.clientX;
+                lastY = e.clientY;
             }
         });
 
         window.addEventListener('wheel', (e) => {
             // Smooth zoom: positive delta zooms out, negative zooms in
-            this.mouseZoom += Math.sign(e.deltaY) * 0.8;
+            this.mouseZoom += Math.sign(e.deltaY) * 0.5;
         }, { passive: true });
 
         // Prevent context menu on right click drag

@@ -91,12 +91,11 @@ export class HUD {
             white-space: nowrap;
         `;
         controlsHint.innerHTML = `
-            <span style="color:#00ffcc;"><b>[HOLD SHIFT]</b> FLY UP</span>
-            <span style="color:#ffcc00;"><b>[WASD]</b> FORWARD / BACK / LEFT / RIGHT</span>
-            <span style="color:#ff9999;"><b>[MOUSE]</b> DIRECT & STEER</span>
-            <span><b>[CTRL / C]</b> DESCEND</span>
-            <span><b>[WHEEL]</b> ZOOM</span>
-            <span><b>[TAB]</b> AUTOPILOT</span>
+            <span style="color:#00ffcc;"><b>[CLICK]</b> 360° MOUSE LOOK AROUND DRONE</span>
+            <span style="color:#ffcc00;"><b>[WASD]</b> MOVE FORWARD / STRAFE</span>
+            <span style="color:#33ff99;"><b>[HOLD SHIFT]</b> FLY UP</span>
+            <span style="color:#ffaa66;"><b>[RELEASE]</b> DESCEND & LAND</span>
+            <span><b>[WHEEL]</b> ZOOM VIEW</span>
         `;
 
         this.container.appendChild(leftPanel);

@@ -49,7 +49,7 @@ async function bootstrap() {
 
     const modelRenderer = new ModelRenderer(gpu);
     await modelRenderer.init();
-    await modelRenderer.loadGLB('/assets/models/drone.glb');
+    await modelRenderer.loadGLB('/assets/models/drone_custom.glb');
 
     // 4. Camera & Input & HUD
     const camera = new Camera();
