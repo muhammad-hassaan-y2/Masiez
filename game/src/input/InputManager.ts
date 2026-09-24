@@ -70,17 +70,30 @@ export class InputManager {
         });
 
         window.addEventListener('mousemove', (e) => {
+            let dx = 0;
+            let dy = 0;
+
             if (this.isPointerLocked) {
-                this.mouseDeltaX += e.movementX || 0;
-                this.mouseDeltaY += e.movementY || 0;
-            } else if (this.isMouseDown) {
-                const dx = (e.movementX !== undefined && Math.abs(e.movementX) < 150) ? e.movementX : (e.clientX - lastX);
-                const dy = (e.movementY !== undefined && Math.abs(e.movementY) < 150) ? e.movementY : (e.clientY - lastY);
-                this.mouseDeltaX += dx;
-                this.mouseDeltaY += dy;
+                dx = e.movementX || 0;
+                dy = e.movementY || 0;
+            } else {
+                if (lastX !== 0 && lastY !== 0) {
+                    const rawDx = (e.movementX !== undefined && Math.abs(e.movementX) < 120) ? e.movementX : (e.clientX - lastX);
+                    const rawDy = (e.movementY !== undefined && Math.abs(e.movementY) < 120) ? e.movementY : (e.clientY - lastY);
+                    dx = rawDx;
+                    dy = rawDy;
+                }
                 lastX = e.clientX;
                 lastY = e.clientY;
             }
+
+            this.mouseDeltaX += dx;
+            this.mouseDeltaY += dy;
+        });
+
+        window.addEventListener('mouseleave', () => {
+            lastX = 0;
+            lastY = 0;
         });
 
         window.addEventListener('wheel', (e) => {
