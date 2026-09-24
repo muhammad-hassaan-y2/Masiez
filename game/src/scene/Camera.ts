@@ -136,7 +136,7 @@ export class Camera {
     private initialized: boolean = false;
 
     public applyMouseDelta(dx: number, dy: number, zoomDelta: number): void {
-        const sensitivity = 0.005;
+        const sensitivity = 0.004;
         this.mouseOrbitYaw += dx * sensitivity;
         this.mouseOrbitPitch += dy * sensitivity;
 
@@ -146,16 +146,13 @@ export class Camera {
     }
 
     public update(dronePos: [number, number, number], droneYawDeg: number, aspect: number): void {
-        const droneYawRad = droneYawDeg * (Math.PI / 180.0);
-
         if (this.mode === 'CHASE') {
-            const effectiveYaw = droneYawRad + this.mouseOrbitYaw;
             const distHoriz = this.baseDistance * Math.cos(this.mouseOrbitPitch);
             const distVert  = this.baseDistance * Math.sin(this.mouseOrbitPitch);
 
-            const targetX = dronePos[0] - Math.sin(effectiveYaw) * distHoriz;
-            const targetZ = dronePos[2] - Math.cos(effectiveYaw) * distHoriz;
-            const targetY = Math.max(0.5, dronePos[1] + distVert);
+            const targetX = dronePos[0] - Math.sin(this.mouseOrbitYaw) * distHoriz;
+            const targetZ = dronePos[2] - Math.cos(this.mouseOrbitYaw) * distHoriz;
+            const targetY = Math.max(0.3, dronePos[1] + distVert);
 
             if (!this.initialized) {
                 this.position[0] = targetX;
@@ -163,9 +160,9 @@ export class Camera {
                 this.position[2] = targetZ;
                 this.initialized = true;
             } else {
-                this.position[0] += (targetX - this.position[0]) * 0.25;
-                this.position[1] += (targetY - this.position[1]) * 0.25;
-                this.position[2] += (targetZ - this.position[2]) * 0.25;
+                this.position[0] += (targetX - this.position[0]) * 0.35;
+                this.position[1] += (targetY - this.position[1]) * 0.35;
+                this.position[2] += (targetZ - this.position[2]) * 0.35;
             }
 
             this.target[0] = dronePos[0];
@@ -176,10 +173,9 @@ export class Camera {
             this.position[1] = dronePos[1] + 0.15;
             this.position[2] = dronePos[2];
 
-            const lookYaw = droneYawRad + this.mouseOrbitYaw;
-            this.target[0] = dronePos[0] + Math.sin(lookYaw) * 10.0;
+            this.target[0] = dronePos[0] + Math.sin(this.mouseOrbitYaw) * 10.0;
             this.target[1] = dronePos[1] - Math.sin(this.mouseOrbitPitch) * 10.0;
-            this.target[2] = dronePos[2] + Math.cos(lookYaw) * 10.0;
+            this.target[2] = dronePos[2] + Math.cos(this.mouseOrbitYaw) * 10.0;
         }
 
         Mat4.perspective(this.projMatrix, this.fovRad, aspect, 0.1, 2000.0);

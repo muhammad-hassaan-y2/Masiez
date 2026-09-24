@@ -63,7 +63,6 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
 
     const Vec3& pos = physics.getPosition();
     const Vec3& rot = physics.getRotation(); // x: roll, y: pitch, z: yaw (deg)
-    const Vec3& angVel = physics.getAngularVelocity();
 
     const float mass = 1.5f;
     const float hoverThrust = (mass * 9.81f) / 4.0f; // ~3.68 N
@@ -71,87 +70,88 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
 
     float targetRollDeg = 0.0f;
     float targetPitchDeg = 0.0f;
-    float targetYawRateDeg = 0.0f;
+    float targetYawDeg = rot.z;
     float baseThrottleRPM = 0.0f;
 
-    const float maxTiltDeg = 25.0f;
-    const float maxYawRateDeg = 90.0f;
+    const float maxTiltDeg = 20.0f;
 
     if (mode == Mode::MANUAL) {
+        // W/S tilts Pitch (Forward/Backward), A/D tilts Roll (Left/Right)
         targetPitchDeg = inPitch * maxTiltDeg;
         targetRollDeg  = inRoll  * maxTiltDeg;
-        targetYawRateDeg = inYaw * maxYawRateDeg;
+        targetYawDeg   = inYaw; // inYaw is the mouse-directed target heading
 
-        bool hasMovementInput = (std::abs(inPitch) > 0.05f || std::abs(inRoll) > 0.05f || inThrottle > 0.05f);
+        bool hasMovement = (std::abs(inPitch) > 0.05f || std::abs(inRoll) > 0.05f);
 
-        if (pos.y < 0.35f && inThrottle <= 0.0f && !hasMovementInput) {
-            // Idle on ground when no flight controls are active
-            baseThrottleRPM = 200.0f;
+        if (pos.y < 0.35f && inThrottle <= 0.0f && !hasMovement) {
+            // Idle on ground when keys are released
+            baseThrottleRPM = 0.0f;
+        } else if (pos.y < 0.35f && inThrottle > 0.0f) {
+            // Holding Shift on ground -> Takeoff thrust
+            baseThrottleRPM = hoverRPM + 250.0f;
         } else {
-            // In flight or taking off:
+            // In flight:
             // Tilt compensation maintains altitude when banking or pitching
             float cr = std::cos(rot.x * (M_PI / 180.0f));
             float cp = std::cos(rot.y * (M_PI / 180.0f));
-            float tiltCompensation = 1.0f / std::max(0.7f, std::abs(cr * cp));
+            float tiltComp = 1.0f / std::max(0.6f, std::abs(cr * cp));
 
-            baseThrottleRPM = (hoverRPM * tiltCompensation) + (inThrottle * 320.0f);
-
-            // Takeoff boost when lifting off the ground
-            if (pos.y < 0.5f && hasMovementInput) {
-                baseThrottleRPM += 100.0f;
-            }
+            baseThrottleRPM = (hoverRPM * tiltComp) + (inThrottle * 300.0f);
         }
-    } else {
-        // Autopilot Mode
-        float altError = targetPos.y - pos.y;
-        float altCorrection = pidAltitude.update(altError, dt);
-        baseThrottleRPM = hoverRPM + std::clamp(altCorrection * 150.0f, -300.0f, 400.0f);
 
-        float xError = targetPos.x - pos.x;
-        float zError = targetPos.z - pos.z;
+        // Direct smooth attitude tracking for snappy game-feel
+        float blendAttitude = std::min(1.0f, dt * 12.0f);
+        float errRoll  = targetRollDeg - rot.x;
+        float errPitch = targetPitchDeg - rot.y;
 
-        // Rotate error to body heading
-        float yawRad = rot.z * (M_PI / 180.0f);
-        float localX =  xError * std::cos(yawRad) + zError * std::sin(yawRad);
-        float localZ = -xError * std::sin(yawRad) + zError * std::cos(yawRad);
+        // Smooth yaw heading alignment with mouse view
+        float errYaw = targetYawDeg - rot.z;
+        while (errYaw > 180.0f) errYaw -= 360.0f;
+        while (errYaw < -180.0f) errYaw += 360.0f;
 
-        targetRollDeg  = std::clamp(pidPosX.update(localX, dt) * maxTiltDeg, -maxTiltDeg, maxTiltDeg);
-        targetPitchDeg = std::clamp(pidPosZ.update(localZ, dt) * maxTiltDeg, -maxTiltDeg, maxTiltDeg);
+        const_cast<DronePhysics&>(physics).setMotorRPMs(
+            baseThrottleRPM, baseThrottleRPM, baseThrottleRPM, baseThrottleRPM
+        );
 
-        float headingError = targetHeading - rot.z;
-        while (headingError > 180.0f) headingError -= 360.0f;
-        while (headingError < -180.0f) headingError += 360.0f;
-        targetYawRateDeg = pidYawAngle.update(headingError, dt);
+        // Update rotation directly via controller for instant response
+        Vec3& mutableRot = const_cast<Vec3&>(physics.getRotation());
+        mutableRot.x += errRoll * blendAttitude;
+        mutableRot.y += errPitch * blendAttitude;
+        mutableRot.z += errYaw * std::min(1.0f, dt * 18.0f);
+
+        outRPMs[0] = baseThrottleRPM;
+        outRPMs[1] = baseThrottleRPM;
+        outRPMs[2] = baseThrottleRPM;
+        outRPMs[3] = baseThrottleRPM;
+        return;
     }
 
-    // Outer angle loop -> target angular rate (deg/s)
-    float errRoll  = targetRollDeg - rot.x;
-    float errPitch = targetPitchDeg - rot.y;
+    // Autopilot Mode
+    float altError = targetPos.y - pos.y;
+    float altCorrection = pidAltitude.update(altError, dt);
+    baseThrottleRPM = hoverRPM + std::clamp(altCorrection * 150.0f, -300.0f, 400.0f);
 
-    float desiredRollRate  = pidRollAngle.update(errRoll, dt);
-    float desiredPitchRate = pidPitchAngle.update(errPitch, dt);
+    float xError = targetPos.x - pos.x;
+    float zError = targetPos.z - pos.z;
 
-    // Inner rate loop -> motor differential adjustments
-    float errRollRate  = desiredRollRate - angVel.x;
-    float errPitchRate = desiredPitchRate - angVel.y;
-    float errYawRate   = targetYawRateDeg - angVel.z;
+    float yawRad = rot.z * (M_PI / 180.0f);
+    float localX =  xError * std::cos(yawRad) + zError * std::sin(yawRad);
+    float localZ = -xError * std::sin(yawRad) + zError * std::cos(yawRad);
 
-    float rollAdj  = std::clamp(pidRollRate.update(errRollRate, dt) * 120.0f, -200.0f, 200.0f);
-    float pitchAdj = std::clamp(pidPitchRate.update(errPitchRate, dt) * 120.0f, -200.0f, 200.0f);
-    float yawAdj   = std::clamp(pidYawRate.update(errYawRate, dt) * 80.0f, -150.0f, 150.0f);
+    targetRollDeg  = std::clamp(pidPosX.update(localX, dt) * maxTiltDeg, -maxTiltDeg, maxTiltDeg);
+    targetPitchDeg = std::clamp(pidPosZ.update(localZ, dt) * maxTiltDeg, -maxTiltDeg, maxTiltDeg);
 
-    // Motor mixer (X config)
-    // 0: FR (+X, +Z), 1: FL (-X, +Z), 2: RR (+X, -Z), 3: RL (-X, -Z)
-    float m0 = baseThrottleRPM + pitchAdj - rollAdj + yawAdj;
-    float m1 = baseThrottleRPM + pitchAdj + rollAdj - yawAdj;
-    float m2 = baseThrottleRPM - pitchAdj - rollAdj - yawAdj;
-    float m3 = baseThrottleRPM - pitchAdj + rollAdj + yawAdj;
+    float headingError = targetHeading - rot.z;
+    while (headingError > 180.0f) headingError -= 360.0f;
+    while (headingError < -180.0f) headingError += 360.0f;
 
-    float minRPM = (baseThrottleRPM > 250.0f) ? 200.0f : 150.0f;
-    float maxRPM = 1100.0f;
+    Vec3& mutableRot = const_cast<Vec3&>(physics.getRotation());
+    mutableRot.x += (targetRollDeg - rot.x) * std::min(1.0f, dt * 8.0f);
+    mutableRot.y += (targetPitchDeg - rot.y) * std::min(1.0f, dt * 8.0f);
+    mutableRot.z += headingError * std::min(1.0f, dt * 8.0f);
 
-    outRPMs[0] = std::clamp(m0, minRPM, maxRPM);
-    outRPMs[1] = std::clamp(m1, minRPM, maxRPM);
-    outRPMs[2] = std::clamp(m2, minRPM, maxRPM);
-    outRPMs[3] = std::clamp(m3, minRPM, maxRPM);
+    outRPMs[0] = baseThrottleRPM;
+    outRPMs[1] = baseThrottleRPM;
+    outRPMs[2] = baseThrottleRPM;
+    outRPMs[3] = baseThrottleRPM;
 }

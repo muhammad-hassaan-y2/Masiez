@@ -137,12 +137,9 @@ async function bootstrap() {
         const zoom = input.consumeMouseZoom();
         camera.applyMouseDelta(mouse.dx, mouse.dy, zoom);
 
-        let yawInput = input.yaw;
-        if (Math.abs(mouse.dx) > 0.05) {
-            yawInput += Math.max(-1.0, Math.min(1.0, mouse.dx * 0.08));
-        }
-
-        physics.setManualInput(input.throttle, input.pitch, input.roll, yawInput);
+        // Direct master heading (in degrees) from camera mouse orientation
+        const masterHeadingDeg = camera.mouseOrbitYaw * (180.0 / Math.PI);
+        physics.setManualInput(input.throttle, input.pitch, input.roll, masterHeadingDeg);
 
         // Fixed-timestep C++ simulation steps
         physicsAccumulator += deltaSec;
