@@ -98,12 +98,25 @@ void DronePhysics::step(float dt, float (*groundHeightFn)(float x, float z)) {
 
     position += velocity * dt;
 
-    // Ground clamping & collision
+    // Boundary clamping to prevent flying off the world mesh
+    position.x = std::clamp(position.x, -480.0f, 480.0f);
+    position.z = std::clamp(position.z, -480.0f, 480.0f);
+
+    // Re-evaluate ground height at new clamped position
+    if (groundHeightFn) {
+        groundY = groundHeightFn(position.x, position.z);
+    }
+
+    // Ground clamping & collision (drone can easily land anywhere)
     if (position.y < groundY + droneRadius) {
         position.y = groundY + droneRadius;
         if (velocity.y < 0.0f) velocity.y = 0.0f;
-        velocity.x *= 0.9f;
-        velocity.z *= 0.9f;
+        // Strong friction on ground to prevent sliding
+        velocity.x *= 0.75f;
+        velocity.z *= 0.75f;
+        // Stabilize upright attitude on landing
+        rotation.x *= 0.85f;
+        rotation.y *= 0.85f;
     }
 
     // Angular velocity & attitude integration
@@ -113,3 +126,4 @@ void DronePhysics::step(float dt, float (*groundHeightFn)(float x, float z)) {
     while (rotation.z > 180.0f) rotation.z -= 360.0f;
     while (rotation.z < -180.0f) rotation.z += 360.0f;
 }
+

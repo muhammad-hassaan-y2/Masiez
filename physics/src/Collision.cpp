@@ -20,41 +20,15 @@ void Collision::setHeightmapData(const unsigned short* data, int width, int heig
 
 float Collision::getHeightAt(float x, float z) {
     float distFromOrigin = std::sqrt(x * x + z * z);
-    float airfieldBlend = std::clamp((distFromOrigin - 30.0f) / 40.0f, 0.0f, 1.0f);
-
-    if (!heightData || hmWidth <= 1 || hmHeight <= 1) {
-        // Fallback procedural hill calculation
-        float h = std::sin(x / 50.0f) * std::cos(z / 50.0f) * 10.0f + std::sin(x / 10.0f + z / 20.0f) * 2.0f;
-        return std::max(0.0f, h) * airfieldBlend;
+    float airfieldBlend = std::clamp((distFromOrigin - 40.0f) / 50.0f, 0.0f, 1.0f);
+    if (airfieldBlend <= 0.0f) {
+        return 0.0f;
     }
-
-    // Convert world (x, z) in [-hmScaleX/2, hmScaleX/2] to normalized [0, 1]
-    float u = (x + hmScaleX * 0.5f) / hmScaleX;
-    float v = (z + hmScaleZ * 0.5f) / hmScaleZ;
-
-    u = std::clamp(u, 0.0f, 1.0f);
-    v = std::clamp(v, 0.0f, 1.0f);
-
-    float px = u * (hmWidth - 1);
-    float py = v * (hmHeight - 1);
-
-    int x0 = (int)px;
-    int y0 = (int)py;
-    int x1 = std::min(x0 + 1, hmWidth - 1);
-    int y1 = std::min(y0 + 1, hmHeight - 1);
-
-    float fx = px - x0;
-    float fy = py - y0;
-
-    float h00 = (float)heightData[y0 * hmWidth + x0] / 65535.0f;
-    float h10 = (float)heightData[y0 * hmWidth + x1] / 65535.0f;
-    float h01 = (float)heightData[y1 * hmWidth + x0] / 65535.0f;
-    float h11 = (float)heightData[y1 * hmWidth + x1] / 65535.0f;
-
-    // Bilinear interpolation
-    float hTop = h00 * (1.0f - fx) + h10 * fx;
-    float hBot = h01 * (1.0f - fx) + h11 * fx;
-    float hNorm = hTop * (1.0f - fy) + hBot * fy;
-
-    return hNorm * hmScaleY * airfieldBlend;
+    float h1 = std::sin(x * 0.012f + 0.4f) * std::cos(z * 0.012f + 0.6f) * 22.0f;
+    float h2 = std::sin(x * 0.024f + z * 0.016f) * 10.0f;
+    float h3 = std::sin(x * 0.005f - 1.0f) * std::cos(z * 0.006f + 0.5f) * 28.0f;
+    float h4 = std::sin(x * 0.05f + z * 0.035f) * 2.0f;
+    float rawHeight = h1 + h2 + h3 + h4 + 14.0f;
+    return std::max(0.0f, rawHeight * airfieldBlend);
 }
+

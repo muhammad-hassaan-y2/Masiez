@@ -27,32 +27,49 @@ struct VertexOutput {
     @location(2) normal: vec3<f32>,
 };
 
+fn getTerrainHeight(px: f32, pz: f32) -> f32 {
+    let distFromOrigin = length(vec2<f32>(px, pz));
+    let airfieldBlend = clamp((distFromOrigin - 40.0) / 50.0, 0.0, 1.0);
+    if (airfieldBlend <= 0.0) {
+        return 0.0;
+    }
+    let h1 = sin(px * 0.012 + 0.4) * cos(pz * 0.012 + 0.6) * 22.0;
+    let h2 = sin(px * 0.024 + pz * 0.016) * 10.0;
+    let h3 = sin(px * 0.005 - 1.0) * cos(pz * 0.006 + 0.5) * 28.0;
+    let h4 = sin(px * 0.05 + pz * 0.035) * 2.0;
+    let rawHeight = h1 + h2 + h3 + h4 + 14.0;
+    return max(0.0, rawHeight * airfieldBlend);
+}
+
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     
-    // Sample heightmap centered at (0,0) reference elevation = 0m
-    let hCenter = textureSampleLevel(heightmapTex, texSampler, vec2<f32>(0.5, 0.5), 0.0).r;
-    let hSample = textureSampleLevel(heightmapTex, texSampler, in.uv, 0.0).r;
+    // Sample heightmap texture (keeps binding active)
+    let hTex = textureSampleLevel(heightmapTex, texSampler, in.uv, 0.0).r;
+    let baseHeight = getTerrainHeight(in.position.x, in.position.z);
     
-    // Airfield zone flattening around origin
-    let distFromOrigin = length(in.position.xz);
-    let airfieldBlend = clamp((distFromOrigin - 30.0) / 40.0, 0.0, 1.0);
-    
-    var worldY = (hSample - hCenter) * 75.0;
-    worldY = worldY * airfieldBlend; // Flat level ground for runway & helipad
-    
+    let worldY = baseHeight;
     let worldP = vec3<f32>(in.position.x, worldY, in.position.z);
     
-    var nSample = textureSampleLevel(normalmapTex, texSampler, in.uv, 0.0).rgb * 2.0 - 1.0;
-    // Flatten normals on airfield
-    if (airfieldBlend < 1.0) {
-        nSample = mix(vec3<f32>(0.0, 1.0, 0.0), nSample, airfieldBlend);
-    }
+    // Analytical gradient normals for hills
+    let eps = 1.0;
+    let hL = getTerrainHeight(in.position.x - eps, in.position.z);
+    let hR = getTerrainHeight(in.position.x + eps, in.position.z);
+    let hD = getTerrainHeight(in.position.x, in.position.z - eps);
+    let hU = getTerrainHeight(in.position.x, in.position.z + eps);
+    var geomNormal = normalize(vec3<f32>((hL - hR) / (2.0 * eps), 1.0, (hD - hU) / (2.0 * eps)));
+    
+    // Sample normalmap (keeps binding active)
+    let nTex = textureSampleLevel(normalmapTex, texSampler, in.uv * 8.0, 0.0).rgb * 2.0 - 1.0;
+    
+    let distFromOrigin = length(in.position.xz);
+    let hillBlend = clamp((distFromOrigin - 40.0) / 50.0, 0.0, 1.0);
+    let finalNormal = normalize(mix(vec3<f32>(0.0, 1.0, 0.0), geomNormal + nTex * 0.2, hillBlend));
     
     out.worldPos = worldP;
     out.uv = in.uv;
-    out.normal = normalize(nSample);
+    out.normal = finalNormal;
     out.clipPos = u.viewProj * vec4<f32>(worldP, 1.0);
     return out;
 }

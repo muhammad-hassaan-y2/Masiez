@@ -1,10 +1,12 @@
 #include "FlightController.h"
+#include "Collision.h"
 #include <algorithm>
 #include <cmath>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846f
 #endif
+
 
 PID::PID(float kp, float ki, float kd, float maxI)
     : kp(kp), ki(ki), kd(kd), maxIntegral(maxI) {}
@@ -73,7 +75,7 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
     float targetYawDeg = inYaw; // inYaw is the mouse-directed target heading
     float baseThrottleRPM = 0.0f;
 
-    const float maxTiltDeg = 22.0f;
+    const float maxTiltDeg = 28.0f;
 
     if (mode == Mode::MANUAL) {
         // WASD flight: fast responsive tilt
@@ -81,16 +83,18 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
         targetRollDeg  = inRoll  * maxTiltDeg;
 
         bool hasMovement = (std::abs(inPitch) > 0.05f || std::abs(inRoll) > 0.05f);
+        float groundY = Collision::getHeightAt(pos.x, pos.z);
+        bool isOnGround = (pos.y <= groundY + 0.35f);
 
-        if (pos.y < 0.35f && inThrottle <= 0.0f && !hasMovement) {
-            // Resting on ground when Shift is not pressed
+        if (isOnGround && inThrottle <= 0.0f && !hasMovement) {
+            // Resting and landed on ground anywhere on the map!
             baseThrottleRPM = 0.0f;
         } else if (inThrottle > 0.0f) {
-            // Shift pressed -> Climb up fast!
-            baseThrottleRPM = hoverRPM + 350.0f; // ~956 RPM (>36 N thrust, fast climb!)
+            // Shift pressed -> Fast climb!
+            baseThrottleRPM = hoverRPM + 450.0f; // ~1050 RPM (>42 N thrust, fast climb!)
         } else {
             // Shift not pressed -> Smooth descent down towards ground!
-            baseThrottleRPM = hoverRPM - 180.0f; // ~426 RPM (<7.2 N thrust, gravity pulls down!)
+            baseThrottleRPM = hoverRPM - 200.0f; // Rapid, controlled descent
         }
 
         // Direct smooth attitude tracking for snappy game-feel
@@ -102,6 +106,24 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
         float errYaw = targetYawDeg - rot.z;
         while (errYaw > 180.0f) errYaw -= 360.0f;
         while (errYaw < -180.0f) errYaw += 360.0f;
+
+        // Responsive PUBG-style WASD movement in the mouse-look heading
+        if (hasMovement) {
+            float yawRad = targetYawDeg * (M_PI / 180.0f);
+            float fwdX = std::sin(yawRad);
+            float fwdZ = std::cos(yawRad);
+            float rgtX = std::cos(yawRad);
+            float rgtZ = -std::sin(yawRad);
+
+            // Fast flight speed: 20 m/s (~72 km/h)
+            float targetVx = (fwdX * inPitch + rgtX * inRoll) * 20.0f;
+            float targetVz = (fwdZ * inPitch + rgtZ * inRoll) * 20.0f;
+
+            Vec3& mutableVel = const_cast<Vec3&>(physics.getVelocity());
+            float blendVel = std::min(1.0f, dt * 7.0f);
+            mutableVel.x += (targetVx - mutableVel.x) * blendVel;
+            mutableVel.z += (targetVz - mutableVel.z) * blendVel;
+        }
 
         const_cast<DronePhysics&>(physics).setMotorRPMs(
             baseThrottleRPM, baseThrottleRPM, baseThrottleRPM, baseThrottleRPM
