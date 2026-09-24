@@ -19,10 +19,13 @@ void Collision::setHeightmapData(const unsigned short* data, int width, int heig
 }
 
 float Collision::getHeightAt(float x, float z) {
+    float distFromOrigin = std::sqrt(x * x + z * z);
+    float airfieldBlend = std::clamp((distFromOrigin - 30.0f) / 40.0f, 0.0f, 1.0f);
+
     if (!heightData || hmWidth <= 1 || hmHeight <= 1) {
         // Fallback procedural hill calculation
         float h = std::sin(x / 50.0f) * std::cos(z / 50.0f) * 10.0f + std::sin(x / 10.0f + z / 20.0f) * 2.0f;
-        return std::max(0.0f, h);
+        return std::max(0.0f, h) * airfieldBlend;
     }
 
     // Convert world (x, z) in [-hmScaleX/2, hmScaleX/2] to normalized [0, 1]
@@ -53,5 +56,5 @@ float Collision::getHeightAt(float x, float z) {
     float hBot = h01 * (1.0f - fx) + h11 * fx;
     float hNorm = hTop * (1.0f - fy) + hBot * fy;
 
-    return hNorm * hmScaleY;
+    return hNorm * hmScaleY * airfieldBlend;
 }

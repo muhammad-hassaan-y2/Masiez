@@ -34,6 +34,8 @@ async function bootstrap() {
     if (!okWasm) {
         console.warn("WASM physics failed to load, check console.");
     }
+    // Arm by default so user can fly immediately with WASD / Space
+    physics.arm(true);
 
     // 3. Initialize Renderers
     const skyRenderer = new SkyRenderer(gpu);
@@ -125,6 +127,12 @@ async function bootstrap() {
 
         // Input update & Mouse Look / Zoom
         input.update();
+
+        // Auto-arm on any flight input
+        if (input.hasAnyFlightInput() && !physics.isArmed()) {
+            physics.arm(true);
+        }
+
         const mouse = input.consumeMouseDelta();
         const zoom = input.consumeMouseZoom();
         camera.applyMouseDelta(mouse.dx, mouse.dy, zoom);

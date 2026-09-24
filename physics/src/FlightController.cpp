@@ -82,12 +82,24 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
         targetRollDeg  = inRoll  * maxTiltDeg;
         targetYawRateDeg = inYaw * maxYawRateDeg;
 
-        if (pos.y < 0.35f && inThrottle <= 0.05f) {
-            // Idle on ground
+        bool hasMovementInput = (std::abs(inPitch) > 0.05f || std::abs(inRoll) > 0.05f || inThrottle > 0.05f);
+
+        if (pos.y < 0.35f && inThrottle <= 0.0f && !hasMovementInput) {
+            // Idle on ground when no flight controls are active
             baseThrottleRPM = 200.0f;
         } else {
-            // In flight: 0 throttle = hover, +1 = climb, -1 = descend
-            baseThrottleRPM = hoverRPM + (inThrottle * 320.0f);
+            // In flight or taking off:
+            // Tilt compensation maintains altitude when banking or pitching
+            float cr = std::cos(rot.x * (M_PI / 180.0f));
+            float cp = std::cos(rot.y * (M_PI / 180.0f));
+            float tiltCompensation = 1.0f / std::max(0.7f, std::abs(cr * cp));
+
+            baseThrottleRPM = (hoverRPM * tiltCompensation) + (inThrottle * 320.0f);
+
+            // Takeoff boost when lifting off the ground
+            if (pos.y < 0.5f && hasMovementInput) {
+                baseThrottleRPM += 100.0f;
+            }
         }
     } else {
         // Autopilot Mode

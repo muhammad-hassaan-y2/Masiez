@@ -81,16 +81,33 @@ export class InputManager {
     }
 
     public update(): void {
-        this.throttle = (this.keys[KEY_BINDINGS.throttleUp] ? 1 : 0) - (this.keys[KEY_BINDINGS.throttleDown] ? 1 : 0);
-        this.yaw      = (this.keys[KEY_BINDINGS.yawRight]    ? 1 : 0) - (this.keys[KEY_BINDINGS.yawLeft]      ? 1 : 0);
-        this.pitch    = (this.keys[KEY_BINDINGS.pitchForward] ? 1 : 0) - (this.keys[KEY_BINDINGS.pitchBackward] ? 1 : 0);
-        this.roll     = (this.keys[KEY_BINDINGS.rollRight]    ? 1 : 0) - (this.keys[KEY_BINDINGS.rollLeft]     ? 1 : 0);
+        const shiftPressed = this.keys['ShiftLeft'] || this.keys['ShiftRight'];
+        const ctrlPressed  = this.keys['ControlLeft'] || this.keys['ControlRight'];
+        const spacePressed = this.keys['Space'];
 
-        // Arrow keys support as secondary controls
-        if (this.keys['ArrowUp'])    this.pitch = 1;
-        if (this.keys['ArrowDown'])  this.pitch = -1;
-        if (this.keys['ArrowLeft'])  this.roll  = -1;
-        if (this.keys['ArrowRight']) this.roll  = 1;
+        // Throttle / Altitude: Shift or Space to fly up, Ctrl or C to fly down
+        let th = 0;
+        if (shiftPressed || spacePressed) th += 1;
+        if (ctrlPressed || this.keys['KeyC']) th -= 1;
+        this.throttle = th;
+
+        // Pitch: W or ArrowUp (Forward), S or ArrowDown (Backward)
+        let p = 0;
+        if (this.keys['KeyW'] || this.keys['ArrowUp']) p += 1;
+        if (this.keys['KeyS'] || this.keys['ArrowDown']) p -= 1;
+        this.pitch = p;
+
+        // Roll: D or ArrowRight (Roll Right), A or ArrowLeft (Roll Left)
+        let r = 0;
+        if (this.keys['KeyD'] || this.keys['ArrowRight']) r += 1;
+        if (this.keys['KeyA'] || this.keys['ArrowLeft']) r -= 1;
+        this.roll = r;
+
+        // Yaw: E (Turn Right), Q (Turn Left)
+        let y = 0;
+        if (this.keys['KeyE']) y += 1;
+        if (this.keys['KeyQ']) y -= 1;
+        this.yaw = y;
 
         // Mouse steering when pointer locked
         if (this.isPointerLocked) {
@@ -114,6 +131,15 @@ export class InputManager {
         this.yaw      = Math.max(-1, Math.min(1, this.yaw));
         this.pitch    = Math.max(-1, Math.min(1, this.pitch));
         this.roll     = Math.max(-1, Math.min(1, this.roll));
+    }
+
+    public hasAnyFlightInput(): boolean {
+        return !!(
+            this.keys['KeyW'] || this.keys['KeyS'] || this.keys['KeyA'] || this.keys['KeyD'] ||
+            this.keys['ArrowUp'] || this.keys['ArrowDown'] || this.keys['ArrowLeft'] || this.keys['ArrowRight'] ||
+            this.keys['ShiftLeft'] || this.keys['ShiftRight'] || this.keys['Space'] ||
+            this.keys['ControlLeft'] || this.keys['ControlRight'] || this.keys['KeyQ'] || this.keys['KeyE']
+        );
     }
 
     public consumeMouseDelta(): { dx: number; dy: number } {
