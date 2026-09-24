@@ -125,7 +125,7 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
             float targetVz = (fwdZ * inPitch + rgtZ * inRoll) * 20.0f;
 
             Vec3& mutableVel = const_cast<Vec3&>(physics.getVelocity());
-            float blendVel = std::min(1.0f, dt * 14.0f);
+            float blendVel = std::min(1.0f, dt * 20.0f);
             mutableVel.x += (targetVx - mutableVel.x) * blendVel;
             mutableVel.z += (targetVz - mutableVel.z) * blendVel;
         }
@@ -138,7 +138,7 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
         Vec3& mutableRot = const_cast<Vec3&>(physics.getRotation());
         mutableRot.x += errRoll * blendAttitude;
         mutableRot.y += errPitch * blendAttitude;
-        mutableRot.z += errYaw * std::min(1.0f, dt * 25.0f);
+        mutableRot.z += errYaw * std::min(1.0f, dt * 30.0f);
 
         outRPMs[0] = baseThrottleRPM;
         outRPMs[1] = baseThrottleRPM;

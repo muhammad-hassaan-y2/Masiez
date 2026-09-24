@@ -139,13 +139,13 @@ export class Camera {
     public viewProjMatrix = Mat4.create();
     public invViewProjMatrix = Mat4.create();
 
-    public fovRad: number = Math.PI / 3.0;
+    public fovRad: number = Math.PI / 3.4; // Tighter, focused perspective
     public mode: 'CHASE' | 'FPV' | 'ORBIT' = 'CHASE';
 
     // Interactive mouse look offsets
     public mouseOrbitYaw: number = 0;   // radians (roundward 360°)
-    public mouseOrbitPitch: number = 0.35; // radians (~20 deg down, looking from overhead)
-    public baseDistance: number = 3.8; // Distance from drone
+    public mouseOrbitPitch: number = 0.30; // radians (~17 deg down, crisp overhead view)
+    public baseDistance: number = 2.5; // Tight view right behind the drone
 
     private initialized: boolean = false;
 
@@ -158,7 +158,7 @@ export class Camera {
 
         // Strictly clamp pitch: not downward (< 0.02 rad), only up to 60-70 degrees upward (1.15 rad)
         this.mouseOrbitPitch = Math.max(0.02, Math.min(1.15, this.mouseOrbitPitch));
-        this.baseDistance = Math.max(1.8, Math.min(15.0, this.baseDistance + zoomDelta));
+        this.baseDistance = Math.max(1.2, Math.min(10.0, this.baseDistance + zoomDelta));
     }
 
     public update(dronePos: [number, number, number], droneYawDeg: number, aspect: number): void {
