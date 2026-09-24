@@ -137,6 +137,11 @@ async function bootstrap() {
         const zoom = input.consumeMouseZoom();
         camera.applyMouseDelta(mouse.dx, mouse.dy, zoom);
 
+        // Smooth vehicle steering turn with A/D when not actively mouse dragging
+        if (input.roll !== 0 && !input.isMouseDown && !input.isPointerLocked) {
+            camera.mouseOrbitYaw += input.roll * 0.025;
+        }
+
         // Direct master heading (in degrees) from camera mouse orientation
         const masterHeadingDeg = camera.mouseOrbitYaw * (180.0 / Math.PI);
         physics.setManualInput(input.throttle, input.pitch, input.roll, masterHeadingDeg);
