@@ -66,27 +66,34 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
     const Vec3& angVel = physics.getAngularVelocity();
 
     const float mass = 1.5f;
-    const float hoverThrust = (mass * 9.81f) / 4.0f;
-    const float hoverRPM = std::sqrt(hoverThrust / 1.0e-5f); // ~606 RPM base scale
+    const float hoverThrust = (mass * 9.81f) / 4.0f; // ~3.68 N
+    const float hoverRPM = std::sqrt(hoverThrust / 1.0e-5f); // ~606.5 RPM
 
     float targetRollDeg = 0.0f;
     float targetPitchDeg = 0.0f;
     float targetYawRateDeg = 0.0f;
-    float baseThrottleRPM = hoverRPM;
+    float baseThrottleRPM = 0.0f;
 
-    const float maxTiltDeg = 30.0f;
+    const float maxTiltDeg = 25.0f;
     const float maxYawRateDeg = 90.0f;
 
     if (mode == Mode::MANUAL) {
         targetPitchDeg = inPitch * maxTiltDeg;
         targetRollDeg  = inRoll  * maxTiltDeg;
         targetYawRateDeg = inYaw * maxYawRateDeg;
-        baseThrottleRPM = hoverRPM + (inThrottle * hoverRPM * 0.6f);
+
+        if (pos.y < 0.35f && inThrottle <= 0.05f) {
+            // Idle on ground
+            baseThrottleRPM = 200.0f;
+        } else {
+            // In flight: 0 throttle = hover, +1 = climb, -1 = descend
+            baseThrottleRPM = hoverRPM + (inThrottle * 320.0f);
+        }
     } else {
-        // Autopilot
+        // Autopilot Mode
         float altError = targetPos.y - pos.y;
         float altCorrection = pidAltitude.update(altError, dt);
-        baseThrottleRPM = hoverRPM + altCorrection * 400.0f;
+        baseThrottleRPM = hoverRPM + std::clamp(altCorrection * 150.0f, -300.0f, 400.0f);
 
         float xError = targetPos.x - pos.x;
         float zError = targetPos.z - pos.z;
@@ -112,24 +119,24 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
     float desiredRollRate  = pidRollAngle.update(errRoll, dt);
     float desiredPitchRate = pidPitchAngle.update(errPitch, dt);
 
-    // Inner rate loop -> motor adjustments
+    // Inner rate loop -> motor differential adjustments
     float errRollRate  = desiredRollRate - angVel.x;
     float errPitchRate = desiredPitchRate - angVel.y;
     float errYawRate   = targetYawRateDeg - angVel.z;
 
-    float rollAdj  = pidRollRate.update(errRollRate, dt) * 400.0f;
-    float pitchAdj = pidPitchRate.update(errPitchRate, dt) * 400.0f;
-    float yawAdj   = pidYawRate.update(errYawRate, dt) * 400.0f;
+    float rollAdj  = std::clamp(pidRollRate.update(errRollRate, dt) * 120.0f, -200.0f, 200.0f);
+    float pitchAdj = std::clamp(pidPitchRate.update(errPitchRate, dt) * 120.0f, -200.0f, 200.0f);
+    float yawAdj   = std::clamp(pidYawRate.update(errYawRate, dt) * 80.0f, -150.0f, 150.0f);
 
     // Motor mixer (X config)
-    // 0: FR, 1: FL, 2: RR, 3: RL
+    // 0: FR (+X, +Z), 1: FL (-X, +Z), 2: RR (+X, -Z), 3: RL (-X, -Z)
     float m0 = baseThrottleRPM + pitchAdj - rollAdj + yawAdj;
     float m1 = baseThrottleRPM + pitchAdj + rollAdj - yawAdj;
     float m2 = baseThrottleRPM - pitchAdj - rollAdj - yawAdj;
     float m3 = baseThrottleRPM - pitchAdj + rollAdj + yawAdj;
 
-    float minRPM = 1000.0f;
-    float maxRPM = 12000.0f;
+    float minRPM = (baseThrottleRPM > 250.0f) ? 200.0f : 150.0f;
+    float maxRPM = 1100.0f;
 
     outRPMs[0] = std::clamp(m0, minRPM, maxRPM);
     outRPMs[1] = std::clamp(m1, minRPM, maxRPM);

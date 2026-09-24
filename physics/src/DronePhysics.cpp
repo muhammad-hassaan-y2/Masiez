@@ -100,8 +100,12 @@ void DronePhysics::step(float dt, float (*groundHeightFn)(float x, float z)) {
     // M0: Front-Right (+X, +Z), M1: Front-Left (-X, +Z)
     // M2: Rear-Right (+X, -Z),  M3: Rear-Left (-X, -Z)
     float d = params.armLength * 0.7071f; // 45 deg arm offset
-    float torqueRoll  = d * ((t0 + t2) - (t1 + t3)); // right vs left
-    float torquePitch = d * ((t0 + t1) - (t2 + t3)); // front vs rear
+    // Left motors (M1, M3) pushing up -> roll right (+Roll)
+    // Right motors (M0, M2) pushing up -> roll left (-Roll)
+    float torqueRoll  = d * ((t1 + t3) - (t0 + t2));
+    // Front motors (M0, M1) pushing up -> pitch up (+Pitch)
+    // Rear motors (M2, M3) pushing up -> pitch down (-Pitch)
+    float torquePitch = d * ((t0 + t1) - (t2 + t3));
     // Reaction torque for yaw (CW vs CCW pairs)
     float torqueYaw   = params.torqueCoeff * ((motorRPMs[0]*motorRPMs[0] + motorRPMs[3]*motorRPMs[3]) -
                                               (motorRPMs[1]*motorRPMs[1] + motorRPMs[2]*motorRPMs[2]));
@@ -111,13 +115,17 @@ void DronePhysics::step(float dt, float (*groundHeightFn)(float x, float z)) {
     float alphaPitch = (torquePitch / params.inertiaY) * (180.0f / M_PI);
     float alphaYaw   = (torqueYaw   / params.inertiaZ) * (180.0f / M_PI);
 
-    // Angular drag damping
-    float angularDamping = 4.0f;
+    // Angular damping
+    float angularDamping = 6.0f;
     angularVelocity.x += (alphaRoll  - angularVelocity.x * angularDamping) * dt;
     angularVelocity.y += (alphaPitch - angularVelocity.y * angularDamping) * dt;
     angularVelocity.z += (alphaYaw   - angularVelocity.z * angularDamping) * dt;
 
     rotation += angularVelocity * dt;
+
+    // Normalize yaw to [-180, 180]
+    while (rotation.z > 180.0f) rotation.z -= 360.0f;
+    while (rotation.z < -180.0f) rotation.z += 360.0f;
 
     // Ground collision check
     float groundY = 0.0f;
@@ -128,13 +136,13 @@ void DronePhysics::step(float dt, float (*groundHeightFn)(float x, float z)) {
     if (position.y < groundY + droneRadius) {
         position.y = groundY + droneRadius;
         if (velocity.y < 0.0f) velocity.y = 0.0f;
-        // Friction on ground
-        velocity.x *= 0.9f;
-        velocity.z *= 0.9f;
-        angularVelocity.x *= 0.8f;
-        angularVelocity.y *= 0.8f;
-        angularVelocity.z *= 0.8f;
-        rotation.x *= 0.95f;
-        rotation.y *= 0.95f;
+        // High friction on ground
+        velocity.x *= 0.85f;
+        velocity.z *= 0.85f;
+        angularVelocity.x *= 0.7f;
+        angularVelocity.y *= 0.7f;
+        angularVelocity.z *= 0.7f;
+        rotation.x *= 0.9f;
+        rotation.y *= 0.9f;
     }
 }
