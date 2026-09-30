@@ -14,12 +14,17 @@ static DronePhysics g_physics;
 static FlightController g_controller;
 static Sensors g_sensors;
 static bool g_armed = false;
+static float g_groundOffset = 0.0f;
 
 static float groundCallback(float x, float z) {
-    return Collision::getHeightAt(x, z);
+    return Collision::getHeightAt(x, z) + g_groundOffset;
 }
 
 extern "C" {
+
+WASM_EXPORT void physics_set_ground_offset(float offset) {
+    g_groundOffset = offset;
+}
 
 WASM_EXPORT void physics_init(float x, float y, float z) {
     float groundY = groundCallback(x, z);

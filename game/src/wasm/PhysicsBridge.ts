@@ -55,6 +55,17 @@ export class PhysicsBridge {
         this.module._physics_arm(armed ? 1 : 0);
     }
 
+    public setGroundOffset(offset: number): void {
+        if (!this.module) return;
+        this.module._physics_set_ground_offset(offset);
+    }
+
+    public resetPosition(x: number, y: number, z: number): void {
+        if (!this.module) return;
+        this.module._physics_init(x, y, z);
+        this.module._physics_arm(1);
+    }
+
     public isArmed(): boolean {
         if (!this.module) return false;
         return this.module._physics_is_armed() === 1;

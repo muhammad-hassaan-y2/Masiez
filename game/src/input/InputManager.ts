@@ -17,6 +17,9 @@ export class InputManager {
     public onModeToggle: () => void = () => {};
     public onCameraToggle: () => void = () => {};
     public onEmergencyStop: () => void = () => {};
+    public onSpeedToggle: () => void = () => {};
+    public onMuteToggle: () => void = () => {};
+    public onMapSelectKey: (mapIndex: number) => void = () => {};
 
     private keys: { [key: string]: boolean } = {};
     private canvas: HTMLCanvasElement;
@@ -32,8 +35,22 @@ export class InputManager {
                 this.onArmToggle();
             } else if (e.code === KEY_BINDINGS.toggleMode) {
                 this.onModeToggle();
-            } else if (e.code === 'KeyC' || e.code === KEY_BINDINGS.cameraFollow) {
+            } else if (e.code === 'KeyC' || e.code === 'KeyV' || e.code === KEY_BINDINGS.cameraFollow) {
                 this.onCameraToggle();
+            } else if (e.code === 'KeyR') {
+                this.onSpeedToggle();
+            } else if (e.code === 'KeyM') {
+                this.onMuteToggle();
+            } else if (e.code === 'Digit1') {
+                this.onMapSelectKey(0);
+            } else if (e.code === 'Digit2') {
+                this.onMapSelectKey(1);
+            } else if (e.code === 'Digit3') {
+                this.onMapSelectKey(2);
+            } else if (e.code === 'Digit4') {
+                this.onMapSelectKey(3);
+            } else if (e.code === 'Digit5') {
+                this.onMapSelectKey(4);
             } else if (e.code === KEY_BINDINGS.emergencyStop) {
                 this.onEmergencyStop();
             }
