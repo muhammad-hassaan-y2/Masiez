@@ -76,13 +76,16 @@ async function bootstrap() {
         'TURBO': 2.4,
     };
 
-    // Active Map Management: Start on instant airfield so user can fly immediately
-    let currentMapDef: MapDefinition = MAP_CATALOG[4];
-    hud.setActiveMapButton('airfield');
-    missionManager.loadCourse('airfield');
-    physics.setGroundOffset(0.0);
-    physics.resetPosition(0, 1.5, 0);
-    camera.baseDistance = 2.5;
+    // Active Map Management: Start directly in Downtown Street Canyons with real buildings and streets
+    let currentMapDef: MapDefinition = MAP_CATALOG[1];
+    hud.setActiveMapButton(currentMapDef.id);
+    missionManager.loadCourse(currentMapDef.id);
+    physics.setGroundOffset(currentMapDef.groundElevation);
+    physics.resetPosition(currentMapDef.spawnPos[0], currentMapDef.spawnPos[1], currentMapDef.spawnPos[2]);
+    camera.baseDistance = currentMapDef.camDistance;
+
+    // Stream the 3D city buildings immediately
+    cityMapRenderer.loadMap(currentMapDef).catch(e => console.warn(e));
 
     async function switchMap(mapDef: MapDefinition) {
         hud.setActiveMapButton(mapDef.id);

@@ -67,14 +67,14 @@ export class MissionManager {
 
         // 2. Downtown Street Canyons: Tight street turns and plaza gates
         this.courses.set('street_city', [
-            { pos: [0, 3.5, 10], radius: 2.4, yawDeg: 0, passed: false },
-            { pos: [6, 4.0, 22], radius: 2.4, yawDeg: 20, passed: false },
-            { pos: [15, 5.0, 32], radius: 2.4, yawDeg: 45, passed: false },
-            { pos: [22, 6.5, 18], radius: 2.4, yawDeg: -45, passed: false },
-            { pos: [18, 5.5, 0], radius: 2.4, yawDeg: -120, passed: false },
-            { pos: [6, 4.0, -12], radius: 2.4, yawDeg: -160, passed: false },
-            { pos: [-8, 4.5, -5], radius: 2.4, yawDeg: 120, passed: false },
-            { pos: [0, 3.5, 2], radius: 2.4, yawDeg: 0, passed: false },
+            { pos: [4, 2.5, 8], radius: 2.2, yawDeg: 0, passed: false },
+            { pos: [5, 3.0, 18], radius: 2.2, yawDeg: 10, passed: false },
+            { pos: [8, 4.0, 26], radius: 2.2, yawDeg: 35, passed: false },
+            { pos: [14, 5.0, 22], radius: 2.2, yawDeg: -45, passed: false },
+            { pos: [16, 4.5, 8], radius: 2.2, yawDeg: -120, passed: false },
+            { pos: [10, 3.5, -4], radius: 2.2, yawDeg: -160, passed: false },
+            { pos: [5, 3.0, -2], radius: 2.2, yawDeg: 140, passed: false },
+            { pos: [4, 2.0, 2], radius: 2.2, yawDeg: 0, passed: false },
         ]);
 
         // 3. Amsterdam Centraal: Canal waterways, bridges, and historic roofs
