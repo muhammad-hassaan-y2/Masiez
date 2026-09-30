@@ -76,20 +76,36 @@ async function bootstrap() {
         'TURBO': 2.4,
     };
 
-    // Active Map Management
-    let currentMapDef: MapDefinition = MAP_CATALOG[0];
+    // Active Map Management: Start on instant airfield so user can fly immediately
+    let currentMapDef: MapDefinition = MAP_CATALOG[4];
+    hud.setActiveMapButton('airfield');
+    missionManager.loadCourse('airfield');
+    physics.setGroundOffset(0.0);
+    physics.resetPosition(0, 1.5, 0);
+    camera.baseDistance = 2.5;
 
     async function switchMap(mapDef: MapDefinition) {
-        currentMapDef = mapDef;
         hud.setActiveMapButton(mapDef.id);
 
         if (mapDef.url) {
             hud.showMapLoading(mapDef.name, 10);
-            await cityMapRenderer.loadMap(mapDef, (pct) => {
-                hud.showMapLoading(mapDef.name, pct);
-            });
+            try {
+                const ok = await cityMapRenderer.loadMap(mapDef, (pct) => {
+                    hud.showMapLoading(mapDef.name, pct);
+                });
+                if (!ok) {
+                    console.warn(`Failed to load ${mapDef.name}`);
+                    hud.showMapLoading(mapDef.name, 100);
+                    return;
+                }
+            } catch (err) {
+                console.error(`Error loading map ${mapDef.name}:`, err);
+                hud.showMapLoading(mapDef.name, 100);
+                return;
+            }
         }
 
+        currentMapDef = mapDef;
         // Configure physics for new map
         physics.setGroundOffset(mapDef.groundElevation);
         physics.resetPosition(mapDef.spawnPos[0], mapDef.spawnPos[1], mapDef.spawnPos[2]);
@@ -99,9 +115,6 @@ async function bootstrap() {
         missionManager.loadCourse(mapDef.id);
         console.log(`[Game] Switched to map: ${mapDef.name}`);
     }
-
-    // Load initial map
-    await switchMap(MAP_CATALOG[0]);
 
     // Input Handlers
     input.onArmToggle = () => {
@@ -389,4 +402,11 @@ async function bootstrap() {
     requestAnimationFrame(frame);
 }
 
-bootstrap().catch(err => console.error("Bootstrap error:", err));
+bootstrap().catch(err => {
+    console.error("Bootstrap error:", err);
+    const errEl = document.getElementById('error-console');
+    if (errEl) {
+        errEl.style.display = 'block';
+        errEl.innerHTML = `<div><b>Bootstrap Error:</b> ${err.stack || err.message || err}</div>`;
+    }
+});

@@ -22,11 +22,19 @@ export class GPUDeviceContext {
             return false;
         }
 
-        const adapter = await navigator.gpu.requestAdapter({
+        let adapter = await navigator.gpu.requestAdapter({
             powerPreference: 'high-performance'
         });
         if (!adapter) {
+            adapter = await navigator.gpu.requestAdapter();
+        }
+        if (!adapter) {
             console.error("No suitable GPUAdapter found.");
+            const errEl = document.getElementById('error-console');
+            if (errEl) {
+                errEl.style.display = 'block';
+                errEl.innerHTML += `<div><b>WebGPU Adapter Error:</b> No compatible GPU adapter found. Ensure hardware acceleration is enabled in your browser settings (chrome://settings/system).</div>`;
+            }
             return false;
         }
         this.adapter = adapter;

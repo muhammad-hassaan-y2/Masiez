@@ -47,8 +47,8 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var color = matU.baseColorFactor;
+    let tex = textureSample(albedoTex, texSampler, in.uv);
     if (matU.hasTexture == 1u) {
-        let tex = textureSample(albedoTex, texSampler, in.uv);
         color = color * tex;
     }
     

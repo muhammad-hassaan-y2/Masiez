@@ -17,8 +17,8 @@ export const MAP_CATALOG: MapDefinition[] = [
         id: 'tram_station',
         name: 'Tram City & Skyscrapers',
         url: '/assets/maps/tram_station.glb',
-        spawnPos: [0, 4.0, 0],
-        groundElevation: 2.2,
+        spawnPos: [0, 10.0, 0],
+        groundElevation: 2.0,
         camDistance: 3.2,
         description: 'Vast 800m metropolis with overhead tram lines, highways, and skyscrapers'
     },
@@ -26,16 +26,16 @@ export const MAP_CATALOG: MapDefinition[] = [
         id: 'street_city',
         name: 'Downtown Street Canyons',
         url: '/assets/maps/street_city_7_for_games_free.glb',
-        spawnPos: [0, 2.5, 0],
-        groundElevation: 0.1,
-        camDistance: 2.6,
+        spawnPos: [4.0, 1.8, 0],
+        groundElevation: 0.0,
+        camDistance: 2.5,
         description: 'Dense downtown streets with storefronts, sidewalks, and buildings'
     },
     {
         id: 'amsterdam',
         name: 'Amsterdam Centraal',
         url: '/assets/maps/centraal_station_amsterdam.glb',
-        spawnPos: [0, 5.0, 0],
+        spawnPos: [0, 8.0, -35],
         groundElevation: 0.5,
         camDistance: 3.5,
         description: 'Iconic Amsterdam historic station district and canals'
@@ -44,9 +44,9 @@ export const MAP_CATALOG: MapDefinition[] = [
         id: 'erangel',
         name: 'Erangel Battleground',
         url: '/assets/maps/erangel_pubg.glb',
-        spawnPos: [0, 6.0, 0],
-        groundElevation: 0.2,
-        camDistance: 3.5,
+        spawnPos: [0, 15.0, 0],
+        groundElevation: 0.0,
+        camDistance: 4.0,
         description: 'Expansive tactical landscape with military structures and terrain'
     },
     {
@@ -234,15 +234,14 @@ export class CityMapRenderer {
             return { acc, slice: binBuffer!.slice(byteOffset, byteOffset + bv.byteLength) };
         };
 
-        // Extract and upload textures
+        // Extract and upload textures in parallel
         const loadedTextures: GPUTextureView[] = [];
         if (jsonChunk.images && jsonChunk.textures) {
-            for (let i = 0; i < jsonChunk.images.length; i++) {
-                const imgInfo = jsonChunk.images[i];
+            const texturePromises = jsonChunk.images.map(async (imgInfo: any) => {
                 try {
                     const bv = jsonChunk.bufferViews[imgInfo.bufferView];
                     const byteOffset = bv.byteOffset || 0;
-                    const slice = binBuffer.slice(byteOffset, byteOffset + bv.byteLength);
+                    const slice = binBuffer!.slice(byteOffset, byteOffset + bv.byteLength);
                     const blob = new Blob([slice], { type: imgInfo.mimeType || 'image/png' });
                     const bmp = await createImageBitmap(blob);
 
@@ -256,11 +255,13 @@ export class CityMapRenderer {
                         { texture: tex },
                         [bmp.width, bmp.height]
                     );
-                    loadedTextures.push(tex.createView());
+                    return tex.createView();
                 } catch (e) {
-                    loadedTextures.push(this.defaultTexture.createView());
+                    return this.defaultTexture.createView();
                 }
-            }
+            });
+            const views = await Promise.all(texturePromises);
+            loadedTextures.push(...views);
         }
 
         // Compute World Matrices by recursively traversing scene node hierarchy

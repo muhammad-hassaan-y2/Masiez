@@ -25,7 +25,6 @@ struct RingInstance {
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    @builtin(instance_index) instanceIdx: u32,
 };
 
 struct VertexOutput {
@@ -37,8 +36,8 @@ struct VertexOutput {
 };
 
 @vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
-    let ring = rings[in.instanceIdx];
+fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> VertexOutput {
+    let ring = rings[instanceIdx];
     var out: VertexOutput;
 
     // Rotate ring by yawDeg
