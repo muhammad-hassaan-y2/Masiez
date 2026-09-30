@@ -6,6 +6,7 @@ export class TelemetryStore {
   private lastSensorHealth = true;
 
   public update(telemetry: any) {
+    if (!telemetry) return;
     this.latest = telemetry;
     this.history.push(telemetry);
     if (this.history.length > 3000) {
@@ -16,7 +17,7 @@ export class TelemetryStore {
   }
 
   private checkAlerts(telemetry: any) {
-    if (!telemetry.battery) return;
+    if (!telemetry || !telemetry.battery) return;
     const { percentage } = telemetry.battery;
     
     [25, 15, 10].forEach(level => {
