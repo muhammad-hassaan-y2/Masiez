@@ -18,8 +18,8 @@ export const MAP_CATALOG: MapDefinition[] = [
         id: 'erangel',
         name: 'Erangel Battleground (PUBG)',
         url: '/assets/maps/erangel_pubg.glb',
-        spawnPos: [0, 8.5, 300],
-        groundElevation: 7.2,
+        spawnPos: [0, 22.0, 300],
+        groundElevation: 19.3,
         yOffset: 208.0,
         camDistance: 2.8,
         description: 'Vast 20km tactical island battleground with military outposts, hills, and coastlines'

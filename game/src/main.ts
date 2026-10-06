@@ -90,8 +90,8 @@ async function bootstrap() {
         .then(res => res.arrayBuffer())
         .then(buf => {
             const u16 = new Uint16Array(buf);
-            // 256x256, spanning 20,000m x 20,000m with vertical range 700m (-150m to 550m)
-            physics.loadHeightmap(u16, 256, 256, 20000.0, 700.0, 20000.0);
+            // 256x256, spanning 20,000m x 20,000m with vertical range 800m (0m to 800m)
+            physics.loadHeightmap(u16, 256, 256, 20000.0, 800.0, 20000.0);
         })
         .catch(e => console.warn("Heightmap load skipped:", e));
 
@@ -256,8 +256,8 @@ async function bootstrap() {
         const currentSpeedMode = speedModes[speedModeIndex];
         const speedMult = speedMultipliers[currentSpeedMode];
         const scaledPitch = input.pitch * speedMult;
-        // With A/D steering heading, strafe roll is zeroed or slight bank
-        const scaledRoll = 0.0;
+        // Bank into turns and strafe responsive to A/D
+        const scaledRoll = input.roll * 0.45 * speedMult;
         const scaledThrottle = input.throttle > 0 ? input.throttle * Math.min(1.5, speedMult) : input.throttle;
 
         // Direct master heading (in degrees) from camera mouse orientation
