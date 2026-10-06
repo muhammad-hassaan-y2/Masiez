@@ -76,15 +76,16 @@ async function bootstrap() {
         'TURBO': 2.4,
     };
 
-    // Active Map Management: Start directly in Downtown Street Canyons with real buildings and streets
-    let currentMapDef: MapDefinition = MAP_CATALOG[1];
+    // Active Map Management: Start directly on Erangel Battleground (PUBG)
+    let currentMapDef: MapDefinition = MAP_CATALOG[0];
     hud.setActiveMapButton(currentMapDef.id);
     missionManager.loadCourse(currentMapDef.id);
     physics.setGroundOffset(currentMapDef.groundElevation);
     physics.resetPosition(currentMapDef.spawnPos[0], currentMapDef.spawnPos[1], currentMapDef.spawnPos[2]);
     camera.baseDistance = currentMapDef.camDistance;
+    camera.currentGroundElevation = currentMapDef.groundElevation;
 
-    // Stream the 3D city buildings immediately
+    // Stream Erangel map immediately
     cityMapRenderer.loadMap(currentMapDef).catch(e => console.warn(e));
 
     async function switchMap(mapDef: MapDefinition) {
@@ -113,6 +114,7 @@ async function bootstrap() {
         physics.setGroundOffset(mapDef.groundElevation);
         physics.resetPosition(mapDef.spawnPos[0], mapDef.spawnPos[1], mapDef.spawnPos[2]);
         camera.baseDistance = mapDef.camDistance;
+        camera.currentGroundElevation = mapDef.groundElevation;
 
         // Load new course
         missionManager.loadCourse(mapDef.id);

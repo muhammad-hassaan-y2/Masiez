@@ -19,16 +19,16 @@ void Collision::setHeightmapData(const unsigned short* data, int width, int heig
 }
 
 float Collision::getHeightAt(float x, float z) {
-    float distFromOrigin = std::sqrt(x * x + z * z);
-    float airfieldBlend = std::clamp((distFromOrigin - 40.0f) / 50.0f, 0.0f, 1.0f);
-    if (airfieldBlend <= 0.0f) {
-        return 0.0f;
+    if (heightData != nullptr && hmWidth > 0 && hmHeight > 0) {
+        float u = (x / hmScaleX) + 0.5f;
+        float v = (z / hmScaleZ) + 0.5f;
+        if (u >= 0.0f && u <= 1.0f && v >= 0.0f && v <= 1.0f) {
+            int ix = std::clamp(static_cast<int>(u * (hmWidth - 1)), 0, hmWidth - 1);
+            int iz = std::clamp(static_cast<int>(v * (hmHeight - 1)), 0, hmHeight - 1);
+            float hNorm = heightData[iz * hmWidth + ix] / 65535.0f;
+            return hNorm * hmScaleY;
+        }
     }
-    float h1 = std::sin(x * 0.012f + 0.4f) * std::cos(z * 0.012f + 0.6f) * 22.0f;
-    float h2 = std::sin(x * 0.024f + z * 0.016f) * 10.0f;
-    float h3 = std::sin(x * 0.005f - 1.0f) * std::cos(z * 0.006f + 0.5f) * 28.0f;
-    float h4 = std::sin(x * 0.05f + z * 0.035f) * 2.0f;
-    float rawHeight = h1 + h2 + h3 + h4 + 14.0f;
-    return std::max(0.0f, rawHeight * airfieldBlend);
+    return 0.0f;
 }
 

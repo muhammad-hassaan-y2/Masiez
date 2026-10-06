@@ -98,9 +98,9 @@ void DronePhysics::step(float dt, float (*groundHeightFn)(float x, float z)) {
 
     position += velocity * dt;
 
-    // Boundary clamping to prevent flying off the world mesh
-    position.x = std::clamp(position.x, -480.0f, 480.0f);
-    position.z = std::clamp(position.z, -480.0f, 480.0f);
+    // Boundary clamping to support vast 20km terrain maps
+    position.x = std::clamp(position.x, -9800.0f, 9800.0f);
+    position.z = std::clamp(position.z, -9800.0f, 9800.0f);
 
     // Re-evaluate ground height at new clamped position
     if (groundHeightFn) {

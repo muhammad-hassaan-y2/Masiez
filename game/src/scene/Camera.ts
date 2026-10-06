@@ -117,20 +117,6 @@ export class Mat4 {
     }
 }
 
-export function getTerrainHeight(px: number, pz: number): number {
-    const dist = Math.hypot(px, pz);
-    const airfieldBlend = Math.max(0.0, Math.min(1.0, (dist - 40.0) / 50.0));
-    if (airfieldBlend <= 0.0) {
-        return 0.0;
-    }
-    const h1 = Math.sin(px * 0.012 + 0.4) * Math.cos(pz * 0.012 + 0.6) * 22.0;
-    const h2 = Math.sin(px * 0.024 + pz * 0.016) * 10.0;
-    const h3 = Math.sin(px * 0.005 - 1.0) * Math.cos(pz * 0.006 + 0.5) * 28.0;
-    const h4 = Math.sin(px * 0.05 + pz * 0.035) * 2.0;
-    const rawHeight = h1 + h2 + h3 + h4 + 14.0;
-    return Math.max(0.0, rawHeight * airfieldBlend);
-}
-
 export class Camera {
     public position: [number, number, number] = [0, 5, 8];
     public target: [number, number, number] = [0, 1, 0];
@@ -144,8 +130,9 @@ export class Camera {
 
     // Interactive mouse look offsets
     public mouseOrbitYaw: number = 0;   // radians (roundward 360°)
-    public mouseOrbitPitch: number = 0.30; // radians (~17 deg down, crisp overhead view)
-    public baseDistance: number = 2.5; // Tight view right behind the drone
+    public mouseOrbitPitch: number = 0.32; // radians (~18 deg down, crisp overhead view)
+    public baseDistance: number = 2.6; // Tight view right behind the drone
+    public currentGroundElevation: number = 0.0;
 
     private initialized: boolean = false;
 
@@ -156,9 +143,9 @@ export class Camera {
         // Upward/downward pitch
         this.mouseOrbitPitch += dy * sensitivity;
 
-        // Strictly clamp pitch: not downward (< 0.02 rad), only up to 60-70 degrees upward (1.15 rad)
-        this.mouseOrbitPitch = Math.max(0.02, Math.min(1.15, this.mouseOrbitPitch));
-        this.baseDistance = Math.max(1.2, Math.min(10.0, this.baseDistance + zoomDelta));
+        // Strictly clamp pitch: not downward (< 0.10 rad ~ 6°), only up to 60-70 degrees upward (1.15 rad)
+        this.mouseOrbitPitch = Math.max(0.10, Math.min(1.15, this.mouseOrbitPitch));
+        this.baseDistance = Math.max(1.5, Math.min(8.0, this.baseDistance + zoomDelta));
     }
 
     public update(dronePos: [number, number, number], droneYawDeg: number, aspect: number): void {
@@ -170,9 +157,9 @@ export class Camera {
             const targetX = dronePos[0] - Math.sin(this.mouseOrbitYaw) * distHoriz;
             const targetZ = dronePos[2] - Math.cos(this.mouseOrbitYaw) * distHoriz;
 
-            // Ground height under camera position
-            const camGroundY = getTerrainHeight(targetX, targetZ);
-            const targetY = Math.max(camGroundY + 0.6, dronePos[1] + distVert);
+            // Ground safety: camera must never dip into the ground mesh
+            const minCamY = this.currentGroundElevation + 0.8;
+            const targetY = Math.max(minCamY, dronePos[1] + distVert);
 
             // Rigid zero-lag tracking: drone is ALWAYS locked in the center of the screen
             this.position[0] = targetX;
@@ -182,11 +169,11 @@ export class Camera {
 
             // Keep view strictly centered on the drone
             this.target[0] = dronePos[0];
-            this.target[1] = dronePos[1] + 0.15;
+            this.target[1] = dronePos[1] + 0.20;
             this.target[2] = dronePos[2];
         } else if (this.mode === 'FPV') {
             this.position[0] = dronePos[0];
-            this.position[1] = dronePos[1] + 0.15;
+            this.position[1] = dronePos[1] + 0.20;
             this.position[2] = dronePos[2];
 
             this.target[0] = dronePos[0] + Math.sin(this.mouseOrbitYaw) * 10.0;

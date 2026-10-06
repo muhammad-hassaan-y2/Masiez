@@ -108,7 +108,15 @@ export class HUD {
 
         MAP_CATALOG.forEach((m, idx) => {
             const btn = document.createElement('button');
-            btn.innerHTML = `<span style="opacity:0.75;font-size:11px;margin-right:4px;">[${idx + 1}]</span>${m.name.split(' ')[0]}`;
+            const shortNames: Record<string, string> = {
+                'erangel': 'Erangel (PUBG)',
+                'street_city': 'Pochinki Canyons',
+                'tram_station': 'Tram Metropolis',
+                'amsterdam': 'Amsterdam Terminal',
+                'airfield': 'Airfield Runway'
+            };
+            const label = shortNames[m.id] || m.name;
+            btn.innerHTML = `<span style="opacity:0.75;font-size:11px;margin-right:4px;">[${idx + 1}]</span>${label}`;
             btn.title = `${m.name}: ${m.description}`;
             btn.style.cssText = `
                 background: ${idx === 0 ? 'rgba(0, 255, 204, 0.25)' : 'rgba(255, 255, 255, 0.05)'};
@@ -256,11 +264,11 @@ export class HUD {
             pointer-events: auto;
         `;
         controlsHint.innerHTML = `
-            <span style="color:#00ffcc;"><b>[CLICK + MOUSE]</b> STEER DIRECTION</span>
-            <span style="color:#ffcc00;"><b>[W]</b> FORWARD</span>
-            <span style="color:#ff9999;"><b>[A / D]</b> STRAFE</span>
+            <span style="color:#00ffcc;"><b>[CLICK + DRAG]</b> STEER HEADING</span>
+            <span style="color:#ffcc00;"><b>[W / S]</b> FORWARD / BACK</span>
+            <span style="color:#ff9999;"><b>[A / D]</b> STEER / STRAFE</span>
             <span style="color:#33ff99;"><b>[HOLD SHIFT]</b> CLIMB</span>
-            <span style="color:#ffaa66;"><b>[RELEASE]</b> LAND</span>
+            <span style="color:#ffaa66;"><b>[CTRL]</b> DESCEND / LAND</span>
             <span style="color:#66ccff;"><b>[R]</b> SPEED MODE</span>
             <span style="color:#ff66cc;"><b>[V]</b> CAMERA</span>
             <span style="color:#ffff66;"><b>[1 - 5]</b> MAPS</span>

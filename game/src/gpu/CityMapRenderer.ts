@@ -8,55 +8,57 @@ export interface MapDefinition {
     url: string;
     spawnPos: [number, number, number];
     groundElevation: number;
+    yOffset?: number;
     camDistance: number;
     description: string;
 }
 
 export const MAP_CATALOG: MapDefinition[] = [
     {
-        id: 'tram_station',
-        name: 'Tram City & Skyscrapers',
-        url: '/assets/maps/tram_station.glb',
-        spawnPos: [0, 10.0, 0],
-        groundElevation: 2.0,
-        camDistance: 3.2,
-        description: 'Vast 800m metropolis with overhead tram lines, highways, and skyscrapers'
+        id: 'erangel',
+        name: 'Erangel Battleground (PUBG)',
+        url: '/assets/maps/erangel_pubg.glb',
+        spawnPos: [0, 8.5, 300],
+        groundElevation: 7.2,
+        yOffset: 208.0,
+        camDistance: 2.8,
+        description: 'Vast 20km tactical island battleground with military outposts, hills, and coastlines'
     },
     {
         id: 'street_city',
-        name: 'Downtown Street Canyons',
+        name: 'Pochinki Downtown Canyons',
         url: '/assets/maps/street_city_7_for_games_free.glb',
-        spawnPos: [4.0, 1.8, 0],
+        spawnPos: [0, 2.5, 10.0],
         groundElevation: 0.0,
         camDistance: 2.5,
-        description: 'Dense downtown streets with storefronts, sidewalks, and buildings'
+        description: 'Dense commercial street sector with storefronts, avenues, and skyscrapers'
+    },
+    {
+        id: 'tram_station',
+        name: 'Georgopol Tram Metropolis',
+        url: '/assets/maps/tram_station.glb',
+        spawnPos: [0, 8.0, 0],
+        groundElevation: 2.0,
+        camDistance: 3.2,
+        description: 'Modern metropolis district with overhead transit rails, roads, and high-rises'
     },
     {
         id: 'amsterdam',
-        name: 'Amsterdam Centraal',
+        name: 'Coastline Waterfront Terminal',
         url: '/assets/maps/centraal_station_amsterdam.glb',
-        spawnPos: [0, 8.0, -35],
+        spawnPos: [0, 5.0, -35],
         groundElevation: 0.5,
         camDistance: 3.5,
-        description: 'Iconic Amsterdam historic station district and canals'
-    },
-    {
-        id: 'erangel',
-        name: 'Erangel Battleground',
-        url: '/assets/maps/erangel_pubg.glb',
-        spawnPos: [0, 15.0, 0],
-        groundElevation: 0.0,
-        camDistance: 4.0,
-        description: 'Expansive tactical landscape with military structures and terrain'
+        description: 'Waterfront canals and historic terminal complex on the bay'
     },
     {
         id: 'airfield',
-        name: 'Procedural Flight Base',
+        name: 'Tactical Airfield Runway',
         url: '',
         spawnPos: [0, 1.5, 0],
         groundElevation: 0.0,
         camDistance: 2.5,
-        description: 'Open runway airfield with hangars, radar tower, and obstacle ring courses'
+        description: 'Open runway airfield with hangars, radar tower, and flight obstacle courses'
     }
 ];
 
@@ -77,7 +79,11 @@ export class CityMapRenderer {
     private globalUniformBuffer!: GPUBuffer;
     private globalBindGroup!: GPUBindGroup;
 
-    private activeMapId: string = 'tram_station';
+    private floorVertexBuffer!: GPUBuffer;
+    private floorIndexBuffer!: GPUBuffer;
+    private floorBindGroup!: GPUBindGroup;
+
+    private activeMapId: string = 'erangel';
     private mapCache: Map<string, MapPrimitive[]> = new Map();
     private isLoading: boolean = false;
     private currentProgress: number = 0;
@@ -96,7 +102,7 @@ export class CityMapRenderer {
         });
         device.queue.writeTexture(
             { texture: this.defaultTexture },
-            new Uint8Array([200, 200, 205, 255]),
+            new Uint8Array([180, 185, 175, 255]),
             { bytesPerRow: 4 },
             [1, 1]
         );
@@ -137,7 +143,7 @@ export class CityMapRenderer {
             },
             primitive: {
                 topology: 'triangle-list',
-                cullMode: 'none',
+                cullMode: 'back', // Cull backfaces so bottom/underside geometry never shows through ("flat no back")
             },
             depthStencil: {
                 format: this.ctx.depthFormat,
@@ -150,6 +156,46 @@ export class CityMapRenderer {
             layout: this.pipeline.getBindGroupLayout(0),
             entries: [
                 { binding: 0, resource: { buffer: this.globalUniformBuffer } },
+            ],
+        });
+
+        // Solid Flat Bedrock Ground Floor ("like flat no back")
+        // Extends 24km across the horizon so looking down always shows solid terrain bedrock
+        const halfSize = 14000.0;
+        const floorVerts = new Float32Array([
+            -halfSize, -0.35, -halfSize,  0, 1, 0,    0,   0,
+             halfSize, -0.35, -halfSize,  0, 1, 0,  200,   0,
+             halfSize, -0.35,  halfSize,  0, 1, 0,  200, 200,
+            -halfSize, -0.35,  halfSize,  0, 1, 0,    0, 200,
+        ]);
+        const floorIndices = new Uint32Array([
+            0, 1, 2,
+            0, 2, 3,
+        ]);
+        this.floorVertexBuffer = this.ctx.createBuffer(floorVerts, GPUBufferUsage.VERTEX);
+        this.floorIndexBuffer = this.ctx.createBuffer(floorIndices, GPUBufferUsage.INDEX);
+
+        // Bedrock material uniform (dark earth terrain color)
+        const floorMatBuffer = device.createBuffer({
+            size: 32,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        const floorMatArray = new Float32Array(8);
+        floorMatArray[0] = 0.25; // r
+        floorMatArray[1] = 0.32; // g
+        floorMatArray[2] = 0.22; // b
+        floorMatArray[3] = 1.0;
+        new Uint32Array(floorMatArray.buffer)[4] = 0; // hasTexture
+        floorMatArray[5] = 0.9; // roughness
+        floorMatArray[6] = 0.05; // metallic
+        device.queue.writeBuffer(floorMatBuffer, 0, floorMatArray);
+
+        this.floorBindGroup = device.createBindGroup({
+            layout: this.pipeline.getBindGroupLayout(1),
+            entries: [
+                { binding: 0, resource: { buffer: floorMatBuffer } },
+                { binding: 1, resource: this.defaultTexture.createView() },
+                { binding: 2, resource: this.sampler },
             ],
         });
     }
@@ -179,7 +225,7 @@ export class CityMapRenderer {
             this.currentProgress = 40;
             onProgress?.(40);
 
-            const primitives = await this.parseGLB(arrayBuffer, (pct) => {
+            const primitives = await this.parseGLB(arrayBuffer, mapDef, (pct) => {
                 const total = 40 + Math.floor(pct * 0.55);
                 this.currentProgress = total;
                 onProgress?.(total);
@@ -198,7 +244,7 @@ export class CityMapRenderer {
         }
     }
 
-    private async parseGLB(arrayBuffer: ArrayBuffer, onProgress?: (pct: number) => void): Promise<MapPrimitive[]> {
+    private async parseGLB(arrayBuffer: ArrayBuffer, mapDef: MapDefinition, onProgress?: (pct: number) => void): Promise<MapPrimitive[]> {
         const dataView = new DataView(arrayBuffer);
         const magic = dataView.getUint32(0, true);
         if (magic !== 0x46546C67) {
@@ -243,17 +289,27 @@ export class CityMapRenderer {
                     const byteOffset = bv.byteOffset || 0;
                     const slice = binBuffer!.slice(byteOffset, byteOffset + bv.byteLength);
                     const blob = new Blob([slice], { type: imgInfo.mimeType || 'image/png' });
-                    const bmp = await createImageBitmap(blob);
+                    
+                    const maxDim = this.ctx.device.limits.maxTextureDimension2D || 8192;
+                    let bmp = await createImageBitmap(blob);
+                    let targetW = bmp.width;
+                    let targetH = bmp.height;
+                    if (targetW > maxDim || targetH > maxDim) {
+                        const scale = Math.min(maxDim / targetW, maxDim / targetH);
+                        targetW = Math.floor(targetW * scale);
+                        targetH = Math.floor(targetH * scale);
+                        bmp = await createImageBitmap(blob, { resizeWidth: targetW, resizeHeight: targetH, resizeQuality: 'high' });
+                    }
 
                     const tex = this.ctx.device.createTexture({
-                        size: [bmp.width, bmp.height, 1],
+                        size: [targetW, targetH, 1],
                         format: 'rgba8unorm',
                         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
                     });
                     this.ctx.device.queue.copyExternalImageToTexture(
                         { source: bmp },
                         { texture: tex },
-                        [bmp.width, bmp.height]
+                        [targetW, targetH]
                     );
                     return tex.createView();
                 } catch (e) {
@@ -340,6 +396,102 @@ export class CityMapRenderer {
             buildNodeMatrix(rootIdx, identity);
         }
 
+        // Pre-build unique Material BindGroups (one per unique material in GLB)
+        const materialBindGroups: Map<number, GPUBindGroup> = new Map();
+
+        const buildMaterialBindGroup = (matIdx: number) => {
+            let baseColor: [number, number, number, number] = [0.85, 0.85, 0.88, 1.0];
+            let textureView = this.defaultTexture.createView();
+            let hasTexture = 0;
+            let roughness = 0.7;
+            let metallic = 0.1;
+
+            if (matIdx >= 0 && jsonChunk.materials?.[matIdx]) {
+                const mat = jsonChunk.materials[matIdx];
+                const pbr = mat.pbrMetallicRoughness;
+                if (pbr) {
+                    if (pbr.baseColorFactor) {
+                        baseColor = [
+                            pbr.baseColorFactor[0],
+                            pbr.baseColorFactor[1],
+                            pbr.baseColorFactor[2],
+                            pbr.baseColorFactor[3] !== undefined ? pbr.baseColorFactor[3] : 1.0
+                        ];
+                    }
+                    if (pbr.roughnessFactor !== undefined) roughness = pbr.roughnessFactor;
+                    if (pbr.metallicFactor !== undefined) metallic = pbr.metallicFactor;
+
+                    if (pbr.baseColorTexture !== undefined) {
+                        const texIdx = pbr.baseColorTexture.index;
+                        const textureDef = jsonChunk.textures?.[texIdx];
+                        const sourceImgIdx = textureDef?.source;
+                        if (sourceImgIdx !== undefined && loadedTextures[sourceImgIdx]) {
+                            textureView = loadedTextures[sourceImgIdx];
+                            hasTexture = 1;
+                        }
+                    }
+                }
+
+                // Support KHR_materials_pbrSpecularGlossiness (used in Erangel PUBG terrain)
+                const specGloss = mat.extensions?.KHR_materials_pbrSpecularGlossiness;
+                if (specGloss) {
+                    if (specGloss.diffuseFactor) {
+                        baseColor = [
+                            specGloss.diffuseFactor[0],
+                            specGloss.diffuseFactor[1],
+                            specGloss.diffuseFactor[2],
+                            specGloss.diffuseFactor[3] !== undefined ? specGloss.diffuseFactor[3] : 1.0
+                        ];
+                    }
+                    if (specGloss.glossinessFactor !== undefined) {
+                        roughness = Math.max(0.05, 1.0 - specGloss.glossinessFactor);
+                    }
+                    if (specGloss.diffuseTexture !== undefined) {
+                        const texIdx = specGloss.diffuseTexture.index;
+                        const textureDef = jsonChunk.textures?.[texIdx];
+                        const sourceImgIdx = textureDef?.source;
+                        if (sourceImgIdx !== undefined && loadedTextures[sourceImgIdx]) {
+                            textureView = loadedTextures[sourceImgIdx];
+                            hasTexture = 1;
+                        }
+                    }
+                }
+            }
+
+            const matBuffer = this.ctx.device.createBuffer({
+                size: 32,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
+            const matArray = new Float32Array(8);
+            matArray[0] = baseColor[0];
+            matArray[1] = baseColor[1];
+            matArray[2] = baseColor[2];
+            matArray[3] = baseColor[3];
+            new Uint32Array(matArray.buffer)[4] = hasTexture;
+            matArray[5] = roughness;
+            matArray[6] = metallic;
+            matArray[7] = 0.0;
+            this.ctx.device.queue.writeBuffer(matBuffer, 0, matArray);
+
+            return this.ctx.device.createBindGroup({
+                layout: this.pipeline.getBindGroupLayout(1),
+                entries: [
+                    { binding: 0, resource: { buffer: matBuffer } },
+                    { binding: 1, resource: textureView },
+                    { binding: 2, resource: this.sampler },
+                ],
+            });
+        };
+
+        const defaultBindGroup = buildMaterialBindGroup(-1);
+        materialBindGroups.set(-1, defaultBindGroup);
+
+        if (jsonChunk.materials) {
+            for (let m = 0; m < jsonChunk.materials.length; m++) {
+                materialBindGroups.set(m, buildMaterialBindGroup(m));
+            }
+        }
+
         // Collect and bake all mesh primitives with their pre-transformed world positions
         const primitives: MapPrimitive[] = [];
         const totalNodes = jsonChunk.nodes ? jsonChunk.nodes.length : 0;
@@ -374,7 +526,7 @@ export class CityMapRenderer {
 
                     // Transform vertex position into world space
                     const wx = worldMat[0] * px + worldMat[4] * py + worldMat[8] * pz + worldMat[12];
-                    const wy = worldMat[1] * px + worldMat[5] * py + worldMat[9] * pz + worldMat[13];
+                    const wy = worldMat[1] * px + worldMat[5] * py + worldMat[9] * pz + worldMat[13] + (mapDef.yOffset || 0.0);
                     const wz = worldMat[2] * px + worldMat[6] * py + worldMat[10] * pz + worldMat[14];
 
                     interleaved[i * 8 + 0] = wx;
@@ -423,64 +575,8 @@ export class CityMapRenderer {
                     }
                 }
 
-                // Material Setup
-                let baseColor: [number, number, number, number] = [0.85, 0.85, 0.88, 1.0];
-                let textureView = this.defaultTexture.createView();
-                let hasTexture = 0;
-                let roughness = 0.7;
-                let metallic = 0.1;
-
-                if (prim.material !== undefined && jsonChunk.materials?.[prim.material]) {
-                    const mat = jsonChunk.materials[prim.material];
-                    const pbr = mat.pbrMetallicRoughness;
-                    if (pbr) {
-                        if (pbr.baseColorFactor) {
-                            baseColor = [
-                                pbr.baseColorFactor[0],
-                                pbr.baseColorFactor[1],
-                                pbr.baseColorFactor[2],
-                                pbr.baseColorFactor[3] !== undefined ? pbr.baseColorFactor[3] : 1.0
-                            ];
-                        }
-                        if (pbr.roughnessFactor !== undefined) roughness = pbr.roughnessFactor;
-                        if (pbr.metallicFactor !== undefined) metallic = pbr.metallicFactor;
-
-                        if (pbr.baseColorTexture !== undefined) {
-                            const texIdx = pbr.baseColorTexture.index;
-                            const textureDef = jsonChunk.textures?.[texIdx];
-                            const sourceImgIdx = textureDef?.source;
-                            if (sourceImgIdx !== undefined && loadedTextures[sourceImgIdx]) {
-                                textureView = loadedTextures[sourceImgIdx];
-                                hasTexture = 1;
-                            }
-                        }
-                    }
-                }
-
-                // Material uniform: baseColor (vec4: 16), hasTexture (u32: 4), roughness (f32: 4), metallic (f32: 4), pad (f32: 4) = 32 bytes
-                const matBuffer = this.ctx.device.createBuffer({
-                    size: 32,
-                    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-                });
-                const matArray = new Float32Array(8);
-                matArray[0] = baseColor[0];
-                matArray[1] = baseColor[1];
-                matArray[2] = baseColor[2];
-                matArray[3] = baseColor[3];
-                new Uint32Array(matArray.buffer)[4] = hasTexture;
-                matArray[5] = roughness;
-                matArray[6] = metallic;
-                matArray[7] = 0.0;
-                this.ctx.device.queue.writeBuffer(matBuffer, 0, matArray);
-
-                const bindGroup = this.ctx.device.createBindGroup({
-                    layout: this.pipeline.getBindGroupLayout(1),
-                    entries: [
-                        { binding: 0, resource: { buffer: matBuffer } },
-                        { binding: 1, resource: textureView },
-                        { binding: 2, resource: this.sampler },
-                    ],
-                });
+                const matIdx = (prim.material !== undefined) ? prim.material : -1;
+                const bindGroup = materialBindGroups.get(matIdx) || defaultBindGroup;
 
                 primitives.push({
                     vertexBuffer,
@@ -491,8 +587,12 @@ export class CityMapRenderer {
                 });
             }
 
-            if (onProgress && totalNodes > 0) {
-                onProgress(Math.floor((nIdx / totalNodes) * 100));
+            if (nIdx % 80 === 0) {
+                if (onProgress && totalNodes > 0) {
+                    onProgress(Math.floor((nIdx / totalNodes) * 100));
+                }
+                // Yield to browser event loop so UI stays fluid
+                await new Promise(r => setTimeout(r, 0));
             }
         }
 

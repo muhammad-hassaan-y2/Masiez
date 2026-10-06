@@ -25,7 +25,7 @@ public:
     void setManualInput(float throttle, float pitch, float roll, float yaw);
     void setAutopilotTarget(float x, float y, float z, float heading);
 
-    void update(float dt, const DronePhysics& physics, bool isArmed, float outRPMs[4]);
+    void update(float dt, const DronePhysics& physics, bool isArmed, float groundY, float outRPMs[4]);
 
 private:
     Mode mode{Mode::MANUAL};

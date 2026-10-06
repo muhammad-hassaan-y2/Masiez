@@ -65,7 +65,9 @@ WASM_EXPORT void fc_set_target(float x, float y, float z, float heading) {
 
 WASM_EXPORT void physics_step(float dt) {
     float rpms[4];
-    g_controller.update(dt, g_physics, g_armed, rpms);
+    const Vec3& p = g_physics.getPosition();
+    float currentGroundY = groundCallback(p.x, p.z);
+    g_controller.update(dt, g_physics, g_armed, currentGroundY, rpms);
     g_physics.setMotorRPMs(rpms[0], rpms[1], rpms[2], rpms[3]);
     g_physics.step(dt, groundCallback);
     g_sensors.update(dt, g_physics, groundCallback);

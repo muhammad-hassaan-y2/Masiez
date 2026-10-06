@@ -59,7 +59,7 @@ void FlightController::setAutopilotTarget(float x, float y, float z, float headi
     targetHeading = heading;
 }
 
-void FlightController::update(float dt, const DronePhysics& physics, bool isArmed, float outRPMs[4]) {
+void FlightController::update(float dt, const DronePhysics& physics, bool isArmed, float groundY, float outRPMs[4]) {
     if (!isArmed) {
         for (int i = 0; i < 4; ++i) outRPMs[i] = 0.0f;
         return;
@@ -75,9 +75,9 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
     float targetRollDeg = 0.0f;
     float targetPitchDeg = 0.0f;
     float targetYawDeg = inYaw; // inYaw is the true mouse-directed target heading
-    float baseThrottleRPM = 0.0f;
+    float baseThrottleRPM = hoverRPM;
 
-    const float maxTiltDeg = 28.0f;
+    const float maxTiltDeg = 24.0f;
 
     if (mode == Mode::MANUAL) {
         // WASD flight: fast responsive tilt
@@ -85,21 +85,28 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
         targetRollDeg  = inRoll  * maxTiltDeg;
 
         bool hasMovement = (std::abs(inPitch) > 0.05f || std::abs(inRoll) > 0.05f);
-        float groundY = Collision::getHeightAt(pos.x, pos.z);
-        bool isOnGround = (pos.y <= groundY + 0.35f);
+        bool isOnGround = (pos.y <= groundY + 0.30f);
+
+        Vec3& mutableVel = const_cast<Vec3&>(physics.getVelocity());
 
         if (isOnGround && inThrottle <= 0.0f && !hasMovement) {
-            // Resting and landed on ground anywhere on the map!
+            // Resting landed on ground
             baseThrottleRPM = 0.0f;
-        } else if (inThrottle > 0.0f) {
-            // Shift pressed -> Fast climb!
-            baseThrottleRPM = hoverRPM + 450.0f; // ~1050 RPM (>42 N thrust, fast climb!)
-        } else if (hasMovement) {
-            // WASD pressed without Shift -> Maintain altitude & fly fast!
-            baseThrottleRPM = hoverRPM + 120.0f;
+            mutableVel.y = 0.0f;
+        } else if (inThrottle > 0.05f) {
+            // Shift pressed -> responsive climb
+            baseThrottleRPM = hoverRPM + 350.0f;
+            float targetVy = 5.0f * inThrottle;
+            mutableVel.y += (targetVy - mutableVel.y) * std::min(1.0f, dt * 10.0f);
+        } else if (inThrottle < -0.05f) {
+            // Ctrl pressed -> controlled descent
+            baseThrottleRPM = hoverRPM - 250.0f;
+            float targetVy = -4.0f * std::abs(inThrottle);
+            mutableVel.y += (targetVy - mutableVel.y) * std::min(1.0f, dt * 10.0f);
         } else {
-            // Shift not pressed and no movement keys -> Smooth descent down towards ground!
-            baseThrottleRPM = hoverRPM - 200.0f; // Rapid, controlled descent
+            // Throttle neutral: stable hover in air
+            baseThrottleRPM = hoverRPM;
+            mutableVel.y += (0.0f - mutableVel.y) * std::min(1.0f, dt * 8.0f);
         }
 
         // Direct smooth attitude tracking for snappy game-feel
@@ -112,7 +119,7 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
         while (errYaw > 180.0f) errYaw -= 360.0f;
         while (errYaw < -180.0f) errYaw += 360.0f;
 
-        // Responsive PUBG-style WASD movement in the mouse-look heading
+        // Responsive PUBG-style flight in the mouse-look heading
         if (hasMovement) {
             float yawRad = targetYawDeg * (M_PI / 180.0f);
             float fwdX = std::sin(yawRad);
@@ -120,14 +127,18 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
             float rgtX = std::cos(yawRad);
             float rgtZ = -std::sin(yawRad);
 
-            // Fast flight speed: 20 m/s (~72 km/h)
-            float targetVx = (fwdX * inPitch + rgtX * inRoll) * 20.0f;
-            float targetVz = (fwdZ * inPitch + rgtZ * inRoll) * 20.0f;
+            // Fast flight speed: 22 m/s (~80 km/h)
+            float targetVx = (fwdX * inPitch + rgtX * inRoll) * 22.0f;
+            float targetVz = (fwdZ * inPitch + rgtZ * inRoll) * 22.0f;
 
-            Vec3& mutableVel = const_cast<Vec3&>(physics.getVelocity());
-            float blendVel = std::min(1.0f, dt * 20.0f);
+            float blendVel = std::min(1.0f, dt * 16.0f);
             mutableVel.x += (targetVx - mutableVel.x) * blendVel;
             mutableVel.z += (targetVz - mutableVel.z) * blendVel;
+        } else {
+            // Smooth braking to stop when keys released
+            float blendStop = std::min(1.0f, dt * 8.0f);
+            mutableVel.x += (0.0f - mutableVel.x) * blendStop;
+            mutableVel.z += (0.0f - mutableVel.z) * blendStop;
         }
 
         const_cast<DronePhysics&>(physics).setMotorRPMs(
