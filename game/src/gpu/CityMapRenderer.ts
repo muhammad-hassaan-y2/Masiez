@@ -629,6 +629,13 @@ export class CityMapRenderer {
         pass.setPipeline(this.pipeline);
         pass.setBindGroup(0, this.globalBindGroup);
 
+        // 1. Draw Solid Flat Bedrock Ground Floor beneath terrain ("like flat no back")
+        pass.setBindGroup(1, this.floorBindGroup);
+        pass.setVertexBuffer(0, this.floorVertexBuffer);
+        pass.setIndexBuffer(this.floorIndexBuffer, 'uint32');
+        pass.drawIndexed(6);
+
+        // 2. Draw Map 3D Geometry
         for (const prim of primitives) {
             pass.setBindGroup(1, prim.bindGroup);
             pass.setVertexBuffer(0, prim.vertexBuffer);

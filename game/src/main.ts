@@ -85,6 +85,16 @@ async function bootstrap() {
     camera.baseDistance = currentMapDef.camDistance;
     camera.currentGroundElevation = currentMapDef.groundElevation;
 
+    // Load terrain collision heightmap for true elevation hugging & collision
+    fetch('/assets/maps/erangel_heightmap.bin')
+        .then(res => res.arrayBuffer())
+        .then(buf => {
+            const u16 = new Uint16Array(buf);
+            // 256x256, spanning 20,000m x 20,000m with vertical range 700m (-150m to 550m)
+            physics.loadHeightmap(u16, 256, 256, 20000.0, 700.0, 20000.0);
+        })
+        .catch(e => console.warn("Heightmap load skipped:", e));
+
     // Stream Erangel map immediately
     cityMapRenderer.loadMap(currentMapDef).catch(e => console.warn(e));
 
@@ -237,16 +247,17 @@ async function bootstrap() {
         const zoom = input.consumeMouseZoom();
         camera.applyMouseDelta(mouse.dx, mouse.dy, zoom);
 
-        // Smooth vehicle steering turn with A/D when not actively mouse dragging
-        if (input.roll !== 0 && !input.isMouseDown && !input.isPointerLocked) {
-            camera.mouseOrbitYaw += input.roll * 0.025;
+        // A/D steering: Turn master flight heading smoothly
+        if (input.roll !== 0) {
+            camera.mouseOrbitYaw += input.roll * 0.035;
         }
 
         // Apply Speed Mode multiplier to flight inputs
         const currentSpeedMode = speedModes[speedModeIndex];
         const speedMult = speedMultipliers[currentSpeedMode];
         const scaledPitch = input.pitch * speedMult;
-        const scaledRoll = input.roll * speedMult;
+        // With A/D steering heading, strafe roll is zeroed or slight bank
+        const scaledRoll = 0.0;
         const scaledThrottle = input.throttle > 0 ? input.throttle * Math.min(1.5, speedMult) : input.throttle;
 
         // Direct master heading (in degrees) from camera mouse orientation

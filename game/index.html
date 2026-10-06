@@ -36,18 +36,27 @@
   <div id="error-console"></div>
   <canvas id="renderCanvas"></canvas>
   <script>
+    function isExtensionNoise(msg) {
+      if (!msg) return false;
+      var str = String(msg).toLowerCase();
+      return str.includes('chrome-extension://') || str.includes('metamask') || str.includes('inpage.js');
+    }
     window.addEventListener('error', function(e) {
+      var msg = e.message || e;
+      if (isExtensionNoise(msg) || isExtensionNoise(e.filename)) return;
       var el = document.getElementById('error-console');
       if (el) {
         el.style.display = 'block';
-        el.innerHTML += '<div><b>Error:</b> ' + (e.message || e) + ' (at ' + (e.filename || '') + ':' + (e.lineno || '') + ')</div>';
+        el.innerHTML += '<div><b>Error:</b> ' + msg + ' (at ' + (e.filename || '') + ':' + (e.lineno || '') + ')</div>';
       }
     });
     window.addEventListener('unhandledrejection', function(e) {
+      var reason = e.reason?.stack || e.reason?.message || e.reason;
+      if (isExtensionNoise(reason)) return;
       var el = document.getElementById('error-console');
       if (el) {
         el.style.display = 'block';
-        el.innerHTML += '<div><b>Promise Rejection:</b> ' + (e.reason?.stack || e.reason?.message || e.reason) + '</div>';
+        el.innerHTML += '<div><b>Promise Rejection:</b> ' + reason + '</div>';
       }
     });
   </script>

@@ -138,13 +138,13 @@ export class Camera {
 
     public applyMouseDelta(dx: number, dy: number, zoomDelta: number): void {
         const sensitivity = 0.0035;
-        // Roundward rotation (left/right around the drone)
+        // Roundward horizontal orbit (left/right around drone)
         this.mouseOrbitYaw += dx * sensitivity;
-        // Upward/downward pitch
-        this.mouseOrbitPitch += dy * sensitivity;
+        // Vertical pitch: mouse up -> tilt view up / drone lower; mouse down -> tilt view down
+        this.mouseOrbitPitch -= dy * sensitivity;
 
-        // Strictly clamp pitch: not downward (< 0.10 rad ~ 6°), only up to 60-70 degrees upward (1.15 rad)
-        this.mouseOrbitPitch = Math.max(0.10, Math.min(1.15, this.mouseOrbitPitch));
+        // Clamp pitch between -10 deg (-0.17 rad) looking slightly upward from below, to 68 deg (1.18 rad) looking down from above
+        this.mouseOrbitPitch = Math.max(-0.17, Math.min(1.18, this.mouseOrbitPitch));
         this.baseDistance = Math.max(1.5, Math.min(8.0, this.baseDistance + zoomDelta));
     }
 
@@ -156,20 +156,17 @@ export class Camera {
             // Orbit directly around the drone
             const targetX = dronePos[0] - Math.sin(this.mouseOrbitYaw) * distHoriz;
             const targetZ = dronePos[2] - Math.cos(this.mouseOrbitYaw) * distHoriz;
+            const targetY = dronePos[1] + distVert;
 
-            // Ground safety: camera must never dip into the ground mesh
-            const minCamY = this.currentGroundElevation + 0.8;
-            const targetY = Math.max(minCamY, dronePos[1] + distVert);
-
-            // Rigid zero-lag tracking: drone is ALWAYS locked in the center of the screen
+            // Zero-lag tracking: rigidly locked directly behind and centered on the drone
             this.position[0] = targetX;
             this.position[1] = targetY;
             this.position[2] = targetZ;
             this.initialized = true;
 
-            // Keep view strictly centered on the drone
+            // Target locked strictly to drone center
             this.target[0] = dronePos[0];
-            this.target[1] = dronePos[1] + 0.20;
+            this.target[1] = dronePos[1] + 0.15;
             this.target[2] = dronePos[2];
         } else if (this.mode === 'FPV') {
             this.position[0] = dronePos[0];

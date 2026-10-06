@@ -60,6 +60,19 @@ export class PhysicsBridge {
         this.module._physics_set_ground_offset(offset);
     }
 
+    public loadHeightmap(data: Uint16Array, width: number, height: number, sx: number, sy: number, sz: number): void {
+        if (!this.module) return;
+        const nBytes = data.byteLength;
+        const ptr = this.module._malloc(nBytes);
+        // Write uint16 data safely into WebAssembly memory
+        const u8View = new Uint8Array(data.buffer, data.byteOffset, nBytes);
+        for (let i = 0; i < nBytes; i++) {
+            this.module.setValue(ptr + i, u8View[i], 'i8');
+        }
+        this.module._collision_load_heightmap(ptr, width, height, sx, sy, sz);
+        console.log(`[PhysicsBridge] Loaded terrain collision heightmap: ${width}x${height}, scale=[${sx}, ${sy}, ${sz}]`);
+    }
+
     public resetPosition(x: number, y: number, z: number): void {
         if (!this.module) return;
         this.module._physics_init(x, y, z);
