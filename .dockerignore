@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+.git
+.github
+*.log
+*.png
+npm-debug.log
+test_write.txt
+tests
+specs

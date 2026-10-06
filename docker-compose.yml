@@ -1,0 +1,13 @@
+services:
+  drone-sim:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drone-autonomy-sim
+    ports:
+      - "5173:5173"
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - HTTP_PORT=3001
+    restart: unless-stopped

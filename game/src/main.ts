@@ -179,8 +179,11 @@ async function bootstrap() {
     let ws: WebSocket | null = null;
     function connectWS() {
         try {
-            ws = new WebSocket('ws://localhost:3001/ws/game');
-            ws.onopen = () => console.log("Connected to Backend 1 Game Server (ws://localhost:3001/ws/game)");
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsHost = window.location.hostname || 'localhost';
+            const wsUrl = `${wsProtocol}//${wsHost}:3001/ws/game`;
+            ws = new WebSocket(wsUrl);
+            ws.onopen = () => console.log(`Connected to Backend 1 Game Server (${wsUrl})`);
             ws.onmessage = (e) => {
                 try {
                     const msg = JSON.parse(e.data);
