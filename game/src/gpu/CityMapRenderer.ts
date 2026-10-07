@@ -15,18 +15,17 @@ export interface MapDefinition {
 
 export const MAP_CATALOG: MapDefinition[] = [
     {
-        id: 'erangel',
-        name: 'Erangel Battleground (PUBG)',
-        url: '/assets/maps/erangel_pubg.glb',
-        spawnPos: [0, 22.0, 300],
-        groundElevation: 19.3,
-        yOffset: 208.0,
-        camDistance: 2.8,
-        description: 'Vast 20km tactical island battleground with military outposts, hills, and coastlines'
+        id: 'airfield',
+        name: 'Tactical Airfield Runway',
+        url: '',
+        spawnPos: [0, 1.5, 0],
+        groundElevation: 0.0,
+        camDistance: 2.5,
+        description: 'Open runway airfield with hangars, radar tower, and flight obstacle courses'
     },
     {
         id: 'street_city',
-        name: 'Pochinki Downtown Canyons',
+        name: 'Downtown City Streets',
         url: '/assets/maps/street_city_7_for_games_free.glb',
         spawnPos: [0, 2.5, 10.0],
         groundElevation: 0.0,
@@ -35,7 +34,7 @@ export const MAP_CATALOG: MapDefinition[] = [
     },
     {
         id: 'tram_station',
-        name: 'Georgopol Tram Metropolis',
+        name: 'Tram Metropolis',
         url: '/assets/maps/tram_station.glb',
         spawnPos: [0, 8.0, 0],
         groundElevation: 2.0,
@@ -44,7 +43,7 @@ export const MAP_CATALOG: MapDefinition[] = [
     },
     {
         id: 'amsterdam',
-        name: 'Coastline Waterfront Terminal',
+        name: 'Amsterdam Terminal',
         url: '/assets/maps/centraal_station_amsterdam.glb',
         spawnPos: [0, 5.0, -35],
         groundElevation: 0.5,
@@ -52,13 +51,14 @@ export const MAP_CATALOG: MapDefinition[] = [
         description: 'Waterfront canals and historic terminal complex on the bay'
     },
     {
-        id: 'airfield',
-        name: 'Tactical Airfield Runway',
-        url: '',
-        spawnPos: [0, 1.5, 0],
-        groundElevation: 0.0,
-        camDistance: 2.5,
-        description: 'Open runway airfield with hangars, radar tower, and flight obstacle courses'
+        id: 'erangel',
+        name: 'Erangel Battleground (PUBG)',
+        url: '/assets/maps/erangel_pubg.glb',
+        spawnPos: [0, 22.0, 300],
+        groundElevation: 19.3,
+        yOffset: 208.0,
+        camDistance: 2.8,
+        description: 'Vast 20km tactical island battleground with military outposts, hills, and coastlines'
     }
 ];
 

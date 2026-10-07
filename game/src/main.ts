@@ -76,7 +76,7 @@ async function bootstrap() {
         'TURBO': 2.4,
     };
 
-    // Active Map Management: Start directly on Erangel Battleground (PUBG)
+    // Active Map Management: Start directly on Tactical Airfield Runway (Original First Map)
     let currentMapDef: MapDefinition = MAP_CATALOG[0];
     hud.setActiveMapButton(currentMapDef.id);
     missionManager.loadCourse(currentMapDef.id);
@@ -84,22 +84,27 @@ async function bootstrap() {
     physics.resetPosition(currentMapDef.spawnPos[0], currentMapDef.spawnPos[1], currentMapDef.spawnPos[2]);
     camera.baseDistance = currentMapDef.camDistance;
     camera.currentGroundElevation = currentMapDef.groundElevation;
+    physics.clearHeightmap();
 
-    // Load terrain collision heightmap for true elevation hugging & collision
-    fetch('/assets/maps/erangel_heightmap.bin')
-        .then(res => res.arrayBuffer())
-        .then(buf => {
-            const u16 = new Uint16Array(buf);
-            // 256x256, spanning 20,000m x 20,000m with vertical range 800m (0m to 800m)
-            physics.loadHeightmap(u16, 256, 256, 20000.0, 800.0, 20000.0);
-        })
-        .catch(e => console.warn("Heightmap load skipped:", e));
-
-    // Stream Erangel map immediately
-    cityMapRenderer.loadMap(currentMapDef).catch(e => console.warn(e));
+    // Stream map GLB if applicable
+    if (currentMapDef.url) {
+        cityMapRenderer.loadMap(currentMapDef).catch(e => console.warn(e));
+    }
 
     async function switchMap(mapDef: MapDefinition) {
         hud.setActiveMapButton(mapDef.id);
+
+        if (mapDef.id === 'erangel') {
+            fetch('/assets/maps/erangel_heightmap.bin')
+                .then(res => res.arrayBuffer())
+                .then(buf => {
+                    const u16 = new Uint16Array(buf);
+                    physics.loadHeightmap(u16, 256, 256, 20000.0, 800.0, 20000.0);
+                })
+                .catch(e => console.warn("Heightmap load skipped:", e));
+        } else {
+            physics.clearHeightmap();
+        }
 
         if (mapDef.url) {
             hud.showMapLoading(mapDef.name, 10);

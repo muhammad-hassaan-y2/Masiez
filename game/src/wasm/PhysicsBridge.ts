@@ -73,6 +73,11 @@ export class PhysicsBridge {
         console.log(`[PhysicsBridge] Loaded terrain collision heightmap: ${width}x${height}, scale=[${sx}, ${sy}, ${sz}]`);
     }
 
+    public clearHeightmap(): void {
+        if (!this.module) return;
+        this.module._collision_load_heightmap(0, 0, 0, 0, 0, 0);
+    }
+
     public resetPosition(x: number, y: number, z: number): void {
         if (!this.module) return;
         this.module._physics_init(x, y, z);
