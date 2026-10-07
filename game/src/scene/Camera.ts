@@ -37,25 +37,26 @@ export class Mat4 {
         let y1 = z2 * x0 - z0 * x2;
         let y2 = z0 * x1 - z1 * x0;
 
+        // Standard column-major lookAt matrix:
         // Column 0
         out[0] = x0;
-        out[1] = x1;
-        out[2] = x2;
+        out[1] = y0;
+        out[2] = z0;
         out[3] = 0;
 
         // Column 1
-        out[4] = y0;
+        out[4] = x1;
         out[5] = y1;
-        out[6] = y2;
+        out[6] = z1;
         out[7] = 0;
 
         // Column 2
-        out[8] = z0;
-        out[9] = z1;
+        out[8] = x2;
+        out[9] = y2;
         out[10] = z2;
         out[11] = 0;
 
-        // Column 3
+        // Column 3 (translation)
         out[12] = -(x0 * eye[0] + x1 * eye[1] + x2 * eye[2]);
         out[13] = -(y0 * eye[0] + y1 * eye[1] + y2 * eye[2]);
         out[14] = -(z0 * eye[0] + z1 * eye[1] + z2 * eye[2]);
