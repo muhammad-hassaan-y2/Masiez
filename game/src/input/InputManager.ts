@@ -20,6 +20,7 @@ export class InputManager {
     public onSpeedToggle: () => void = () => {};
     public onMuteToggle: () => void = () => {};
     public onMapSelectKey: (mapIndex: number) => void = () => {};
+    public onShoot: () => void = () => {};
 
     private keys: { [key: string]: boolean } = {};
     private canvas: HTMLCanvasElement;
@@ -51,6 +52,8 @@ export class InputManager {
                 this.onMapSelectKey(3);
             } else if (e.code === 'Digit5') {
                 this.onMapSelectKey(4);
+            } else if (e.code === 'KeyF' || e.code === 'KeyJ') {
+                this.onShoot();
             } else if (e.code === KEY_BINDINGS.emergencyStop) {
                 this.onEmergencyStop();
             }
@@ -60,7 +63,7 @@ export class InputManager {
             this.keys[e.code] = false;
         });
 
-        // Mouse Drag Steering (Only rotates when mouse button is clicked and dragged)
+        // Mouse Drag Steering & Firing
         let lastX = 0;
         let lastY = 0;
 
@@ -69,6 +72,7 @@ export class InputManager {
                 this.isMouseDown = true;
                 lastX = e.clientX;
                 lastY = e.clientY;
+                this.onShoot();
             }
         });
 

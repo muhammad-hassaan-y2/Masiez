@@ -26,6 +26,7 @@ export class HUD {
     private loadingOverlay!: HTMLElement;
     private loadingBarFill!: HTMLElement;
     private loadingText!: HTMLElement;
+    private hitMarkerEl!: HTMLElement | null;
 
     public onMapSelect?: (mapDef: MapDefinition) => void;
     public onSpeedModeToggle?: () => void;
@@ -257,13 +258,14 @@ export class HUD {
             font-size: 13px;
             color: #f0f0f0;
             display: flex;
-            gap: 18px;
+            gap: 16px;
             align-items: center;
             box-shadow: 0 4px 25px rgba(0, 0, 0, 0.6);
             white-space: nowrap;
             pointer-events: auto;
         `;
         controlsHint.innerHTML = `
+            <span style="color:#ff3366; animation: pulse 2s infinite;"><b>[F / CLICK]</b> FIRE LASER CANNON</span>
             <span style="color:#00ffcc;"><b>[CLICK + DRAG]</b> STEER HEADING</span>
             <span style="color:#ffcc00;"><b>[W / S]</b> FORWARD / BACK</span>
             <span style="color:#ff9999;"><b>[A / D]</b> STEER / STRAFE</span>
@@ -274,6 +276,33 @@ export class HUD {
             <span style="color:#ffff66;"><b>[1 - 5]</b> MAPS</span>
             <span style="color:#bbbbbb;"><b>[M]</b> MUTE</span>
         `;
+
+        // 3. Holographic Reticle / Crosshair & Hit Marker
+        const crosshairContainer = document.createElement('div');
+        crosshairContainer.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        `;
+        crosshairContainer.innerHTML = `
+            <svg width="48" height="48" viewBox="0 0 48 48" style="opacity: 0.85;">
+                <circle cx="24" cy="24" r="14" fill="none" stroke="#00ffcc" stroke-width="1.5" stroke-dasharray="6 4" />
+                <line x1="24" y1="4" x2="24" y2="14" stroke="#00ffcc" stroke-width="2" />
+                <line x1="24" y1="34" x2="24" y2="44" stroke="#00ffcc" stroke-width="2" />
+                <line x1="4" y1="24" x2="14" y2="24" stroke="#00ffcc" stroke-width="2" />
+                <line x1="34" y1="24" x2="44" y2="24" stroke="#00ffcc" stroke-width="2" />
+                <circle cx="24" cy="24" r="2.5" fill="#00ffcc" />
+            </svg>
+            <div id="hud-hit-marker" style="font-size:13px; font-weight:800; color:#ff3333; opacity:0; transition:opacity 0.1s; margin-top:6px; text-shadow:0 0 10px rgba(255,0,0,0.8);">✕ HIT!</div>
+        `;
+        this.container.appendChild(crosshairContainer);
+        this.hitMarkerEl = crosshairContainer.querySelector('#hud-hit-marker');
 
         // 3. Loading Overlay for High-Res Maps
         this.loadingOverlay = document.createElement('div');
@@ -364,7 +393,9 @@ export class HUD {
         totalRings: number,
         lapTime: number,
         notificationText: string,
-        isMuted: boolean
+        isMuted: boolean,
+        hitMarkerTimer: number = 0,
+        hitMarkerText: string = ""
     ): void {
         const groundSpeed = Math.sqrt(vel[0] * vel[0] + vel[2] * vel[2]);
         this.altEl.innerText = `ALT (AGL): ${sensors.altitudeAGL.toFixed(1)} m`;
@@ -390,6 +421,16 @@ export class HUD {
             this.notificationEl.style.opacity = '1';
         } else {
             this.notificationEl.style.opacity = '0';
+        }
+
+        // Hit marker
+        if (this.hitMarkerEl) {
+            if (hitMarkerTimer > 0) {
+                this.hitMarkerEl.innerText = hitMarkerText || '✕ HIT!';
+                this.hitMarkerEl.style.opacity = '1';
+            } else {
+                this.hitMarkerEl.style.opacity = '0';
+            }
         }
     }
 }

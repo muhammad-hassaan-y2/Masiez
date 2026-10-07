@@ -7,6 +7,10 @@ import { SkyRenderer } from './gpu/SkyRenderer';
 import { CityMapRenderer, MAP_CATALOG, MapDefinition } from './gpu/CityMapRenderer';
 import { SoundManager } from './gameplay/SoundManager';
 import { MissionManager } from './gameplay/MissionManager';
+import { CollisionSystem } from './gameplay/CollisionSystem';
+import { EntityManager } from './gameplay/EntityManager';
+import { WeaponSystem } from './gameplay/WeaponSystem';
+import { CombatRenderer } from './gpu/CombatRenderer';
 import { Camera } from './scene/Camera';
 import { InputManager } from './input/InputManager';
 import { HUD } from './hud/HUD';
@@ -62,7 +66,14 @@ async function bootstrap() {
     const cityMapRenderer = new CityMapRenderer(gpu);
     await cityMapRenderer.init();
 
-    // 4. Camera, Input, HUD
+    // 4. Combat Systems: Building Collisions, Moving Entities & Weapons
+    const collisionSystem = new CollisionSystem();
+    const entityManager = new EntityManager();
+    const weaponSystem = new WeaponSystem();
+    const combatRenderer = new CombatRenderer(gpu);
+    await combatRenderer.init();
+
+    // 5. Camera, Input, HUD
     const camera = new Camera();
     const input = new InputManager(canvas);
     const hud = new HUD();
@@ -133,10 +144,26 @@ async function bootstrap() {
 
         // Load new course
         missionManager.loadCourse(mapDef.id);
+
+        if (mapDef.id === 'airfield') {
+            collisionSystem.initAirfieldColliders();
+            entityManager.initAirfieldEntities();
+        } else {
+            collisionSystem.clearColliders();
+            entityManager.entities = [];
+        }
+
         console.log(`[Game] Switched to map: ${mapDef.name}`);
     }
 
     // Input Handlers
+    input.onShoot = () => {
+        const curPos = physics.getPosition();
+        const curRot = physics.getRotation();
+        const curVel = physics.getVelocity();
+        weaponSystem.fire(curPos, curRot, curVel, soundManager, performance.now() / 1000.0);
+    };
+
     input.onArmToggle = () => {
         const nextArmed = !physics.isArmed();
         physics.arm(nextArmed);
@@ -285,6 +312,19 @@ async function bootstrap() {
         const isArmed = physics.isArmed();
         const mode = physics.getMode();
 
+        // 1. Resolve Drone vs Buildings, Hangars, Control Tower, and Structures
+        const col = collisionSystem.resolveDroneCollision(pos, vel, 0.45);
+        if (col.hit) {
+            soundManager.playThud();
+            physics.resetPosition(pos[0], pos[1], pos[2]);
+        }
+
+        // 2. Update Moving Entities (Airport Ground Crew, Patrol Rover, Target Drones)
+        entityManager.update(deltaSec, pos);
+
+        // 3. Update Drone Weapon System (Plasma Lasers & Explosive Impacts)
+        weaponSystem.update(deltaSec, collisionSystem, entityManager, missionManager, soundManager);
+
         const groundSpeed = Math.sqrt(vel[0]*vel[0] + vel[2]*vel[2]);
 
         // Update Mission checkpoints & racing timer
@@ -312,7 +352,9 @@ async function bootstrap() {
             missionManager.totalRings,
             missionManager.currentLapTime,
             missionManager.notificationText,
-            soundManager.getMuted()
+            soundManager.getMuted(),
+            weaponSystem.hitMarkerTimer,
+            weaponSystem.hitMarkerText
         );
 
         // Send telemetry to server at 10Hz
@@ -416,6 +458,9 @@ async function bootstrap() {
 
         // 4. Draw Drone 3D Custom Model
         modelRenderer.render(renderPass, camera, pos, rot, 2.0, timeSec);
+
+        // 5. Draw Combat Elements: Moving Persons, Patrol Rover, Target Drones, Lasers & Explosions
+        combatRenderer.render(renderPass, camera, entityManager, weaponSystem, timeSec);
 
         renderPass.end();
         gpu.device.queue.submit([commandEncoder.finish()]);
