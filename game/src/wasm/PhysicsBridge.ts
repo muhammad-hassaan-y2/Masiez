@@ -84,6 +84,22 @@ export class PhysicsBridge {
         this.module._physics_arm(1);
     }
 
+    public setPosition(x: number, y: number, z: number): void {
+        if (!this.module) return;
+        // g_physics.position is at byte offset 4232 in WASM memory
+        this.module.setValue(4232, x, 'float');
+        this.module.setValue(4236, y, 'float');
+        this.module.setValue(4240, z, 'float');
+    }
+
+    public setVelocity(vx: number, vy: number, vz: number): void {
+        if (!this.module) return;
+        // g_physics.velocity is at byte offset 4244 in WASM memory
+        this.module.setValue(4244, vx, 'float');
+        this.module.setValue(4248, vy, 'float');
+        this.module.setValue(4252, vz, 'float');
+    }
+
     public isArmed(): boolean {
         if (!this.module) return false;
         return this.module._physics_is_armed() === 1;

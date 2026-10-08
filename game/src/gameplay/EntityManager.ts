@@ -30,6 +30,115 @@ export class EntityManager {
         this.initAirfieldEntities();
     }
 
+    public initMapEntities(mapId: string, spawnPos: [number, number, number], groundY: number): void {
+        if (mapId === 'airfield') {
+            this.initAirfieldEntities();
+            return;
+        }
+
+        this.entities = [];
+        this.routes.clear();
+
+        const sx = spawnPos[0];
+        const sz = spawnPos[2];
+        const gy = groundY;
+
+        // 1. Map-specific moving pedestrians / personnel
+        this.addPerson(`${mapId}_person_1`, 'Civilian Pedestrian A', [sx + 6, gy, sz + 8], 0, [0.95, 0.45, 0.2, 1.0], [
+            [sx + 6, gy, sz + 8], [sx + 6, gy, sz + 24], [sx + 14, gy, sz + 24], [sx + 14, gy, sz + 8]
+        ]);
+        this.addPerson(`${mapId}_person_2`, 'Civilian Pedestrian B', [sx - 8, gy, sz + 12], 90, [0.2, 0.65, 0.95, 1.0], [
+            [sx - 8, gy, sz + 12], [sx - 8, gy, sz - 15], [sx - 18, gy, sz - 15], [sx - 18, gy, sz + 12]
+        ]);
+        this.addPerson(`${mapId}_person_3`, 'Security Officer', [sx + 18, gy, sz - 10], 180, [0.95, 0.85, 0.1, 1.0], [
+            [sx + 18, gy, sz - 10], [sx + 18, gy, sz + 15], [sx + 24, gy, sz + 15], [sx + 24, gy, sz - 10]
+        ]);
+        this.addPerson(`${mapId}_person_4`, 'City Patrolman', [sx - 20, gy, sz + 20], 270, [0.3, 0.85, 0.4, 1.0], [
+            [sx - 20, gy, sz + 20], [sx - 4, gy, sz + 20], [sx - 4, gy, sz + 32], [sx - 20, gy, sz + 32]
+        ]);
+
+        // 2. Autonomous Patrol Vehicle / Rover
+        this.entities.push({
+            id: `${mapId}_rover`,
+            type: 'ROVER',
+            pos: [sx - 12, gy + 0.4, sz - 20],
+            headingDeg: 0,
+            speed: 6.0,
+            health: 220,
+            maxHealth: 220,
+            radius: 1.4,
+            height: 1.3,
+            walkPhase: 0,
+            isAlive: true,
+            respawnTimer: 0,
+            color: [0.15, 0.75, 0.95, 1.0],
+            roleName: `${mapId.toUpperCase()} Patrol Unit`
+        });
+        this.routes.set(`${mapId}_rover`, {
+            points: [
+                [sx - 12, gy + 0.4, sz - 20],
+                [sx - 12, gy + 0.4, sz + 45],
+                [sx + 22, gy + 0.4, sz + 45],
+                [sx + 22, gy + 0.4, sz - 20]
+            ],
+            currentIndex: 0
+        });
+
+        // 3. Aerial Training Target Drones
+        const targetAlt = gy + 14.0;
+        this.entities.push({
+            id: `${mapId}_drone_1`,
+            type: 'TARGET_DRONE',
+            pos: [sx + 15, targetAlt, sz + 20],
+            headingDeg: 30,
+            speed: 4.5,
+            health: 90,
+            maxHealth: 90,
+            radius: 0.9,
+            height: 0.6,
+            walkPhase: 0,
+            isAlive: true,
+            respawnTimer: 0,
+            color: [1.0, 0.25, 0.25, 1.0],
+            roleName: 'Aerial Target Bravo'
+        });
+        this.routes.set(`${mapId}_drone_1`, {
+            points: [
+                [sx + 15, targetAlt, sz + 20],
+                [sx + 35, targetAlt + 3, sz + 45],
+                [sx + 20, targetAlt - 2, sz + 60],
+                [sx - 5, targetAlt, sz + 30]
+            ],
+            currentIndex: 0
+        });
+
+        this.entities.push({
+            id: `${mapId}_drone_2`,
+            type: 'TARGET_DRONE',
+            pos: [sx - 25, targetAlt + 4, sz - 15],
+            headingDeg: 120,
+            speed: 4.0,
+            health: 90,
+            maxHealth: 90,
+            radius: 0.9,
+            height: 0.6,
+            walkPhase: 0,
+            isAlive: true,
+            respawnTimer: 0,
+            color: [1.0, 0.65, 0.1, 1.0],
+            roleName: 'Aerial Target Charlie'
+        });
+        this.routes.set(`${mapId}_drone_2`, {
+            points: [
+                [sx - 25, targetAlt + 4, sz - 15],
+                [sx - 40, targetAlt + 2, sz + 20],
+                [sx - 15, targetAlt + 5, sz + 40],
+                [sx - 10, targetAlt + 3, sz - 5]
+            ],
+            currentIndex: 0
+        });
+    }
+
     public initAirfieldEntities(): void {
         this.entities = [];
         this.routes.clear();

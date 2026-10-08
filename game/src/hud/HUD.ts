@@ -265,8 +265,8 @@ export class HUD {
             pointer-events: auto;
         `;
         controlsHint.innerHTML = `
-            <span style="color:#ff3366; animation: pulse 2s infinite;"><b>[F / CLICK]</b> FIRE LASER CANNON</span>
-            <span style="color:#00ffcc;"><b>[CLICK + DRAG]</b> STEER HEADING</span>
+            <span style="color:#ff3366; animation: pulse 2s infinite;"><b>[F / TAP CLICK]</b> FIRE LASERS</span>
+            <span style="color:#00ffcc;"><b>[DRAG MOUSE]</b> STEER HEADING</span>
             <span style="color:#ffcc00;"><b>[W / S]</b> FORWARD / BACK</span>
             <span style="color:#ff9999;"><b>[A / D]</b> STEER / STRAFE</span>
             <span style="color:#33ff99;"><b>[HOLD SHIFT]</b> CLIMB</span>

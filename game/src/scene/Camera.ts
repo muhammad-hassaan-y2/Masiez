@@ -144,8 +144,8 @@ export class Camera {
         // Vertical pitch: mouse up -> tilt view up / drone lower; mouse down -> tilt view down
         this.mouseOrbitPitch -= dy * sensitivity;
 
-        // Clamp pitch between -10 deg (-0.17 rad) looking slightly upward from below, to 68 deg (1.18 rad) looking down from above
-        this.mouseOrbitPitch = Math.max(-0.17, Math.min(1.18, this.mouseOrbitPitch));
+        // Clamp pitch so camera stays elevated above the drone (never dips underground or behind terrain)
+        this.mouseOrbitPitch = Math.max(0.05, Math.min(1.22, this.mouseOrbitPitch));
         this.baseDistance = Math.max(1.5, Math.min(8.0, this.baseDistance + zoomDelta));
     }
 
@@ -157,7 +157,9 @@ export class Camera {
             // Orbit directly around the drone
             const targetX = dronePos[0] - Math.sin(this.mouseOrbitYaw) * distHoriz;
             const targetZ = dronePos[2] - Math.cos(this.mouseOrbitYaw) * distHoriz;
-            const targetY = dronePos[1] + distVert;
+            // Strictly clamp targetY above ground level so the camera NEVER clips under terrain
+            const minAllowedY = this.currentGroundElevation + 0.50;
+            const targetY = Math.max(minAllowedY, dronePos[1] + distVert);
 
             // Zero-lag tracking: rigidly locked directly behind and centered on the drone
             this.position[0] = targetX;
@@ -167,7 +169,7 @@ export class Camera {
 
             // Target locked strictly to drone center
             this.target[0] = dronePos[0];
-            this.target[1] = dronePos[1] + 0.15;
+            this.target[1] = Math.max(this.currentGroundElevation + 0.25, dronePos[1] + 0.15);
             this.target[2] = dronePos[2];
         } else if (this.mode === 'FPV') {
             this.position[0] = dronePos[0];

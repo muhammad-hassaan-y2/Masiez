@@ -1,6 +1,7 @@
 import { GPUDeviceContext } from './Device';
 import { Camera } from '../scene/Camera';
 import cityShaderCode from '../shaders/city_map.wgsl?raw';
+import { AABB } from '../gameplay/CollisionSystem';
 
 export interface MapDefinition {
     id: string;
@@ -85,8 +86,13 @@ export class CityMapRenderer {
 
     private activeMapId: string = 'erangel';
     private mapCache: Map<string, MapPrimitive[]> = new Map();
+    private mapColliders: Map<string, AABB[]> = new Map();
     private isLoading: boolean = false;
     private currentProgress: number = 0;
+
+    public getMapColliders(mapId: string): AABB[] {
+        return this.mapColliders.get(mapId) || [];
+    }
 
     constructor(ctx: GPUDeviceContext) {
         this.ctx = ctx;
@@ -494,6 +500,7 @@ export class CityMapRenderer {
 
         // Collect and bake all mesh primitives with their pre-transformed world positions
         const primitives: MapPrimitive[] = [];
+        const extractedColliders: AABB[] = [];
         const totalNodes = jsonChunk.nodes ? jsonChunk.nodes.length : 0;
 
         for (let nIdx = 0; nIdx < totalNodes; nIdx++) {
@@ -519,6 +526,10 @@ export class CityMapRenderer {
                 const count = posInfo.acc.count;
                 const interleaved = new Float32Array(count * 8);
 
+                let pMinX = Infinity, pMaxX = -Infinity;
+                let pMinY = Infinity, pMaxY = -Infinity;
+                let pMinZ = Infinity, pMaxZ = -Infinity;
+
                 for (let i = 0; i < count; i++) {
                     const px = posArray[i * 3 + 0];
                     const py = posArray[i * 3 + 1];
@@ -528,6 +539,10 @@ export class CityMapRenderer {
                     const wx = worldMat[0] * px + worldMat[4] * py + worldMat[8] * pz + worldMat[12];
                     const wy = worldMat[1] * px + worldMat[5] * py + worldMat[9] * pz + worldMat[13] + (mapDef.yOffset || 0.0);
                     const wz = worldMat[2] * px + worldMat[6] * py + worldMat[10] * pz + worldMat[14];
+
+                    pMinX = Math.min(pMinX, wx); pMaxX = Math.max(pMaxX, wx);
+                    pMinY = Math.min(pMinY, wy); pMaxY = Math.max(pMaxY, wy);
+                    pMinZ = Math.min(pMinZ, wz); pMaxZ = Math.max(pMaxZ, wz);
 
                     interleaved[i * 8 + 0] = wx;
                     interleaved[i * 8 + 1] = wy;
@@ -556,6 +571,19 @@ export class CityMapRenderer {
 
                     interleaved[i * 8 + 6] = uvArray ? uvArray[i * 2 + 0] : 0.0;
                     interleaved[i * 8 + 7] = uvArray ? uvArray[i * 2 + 1] : 0.0;
+                }
+
+                // Check if this primitive forms a solid building / structure obstacle
+                const height = pMaxY - pMinY;
+                const sizeX = pMaxX - pMinX;
+                const sizeZ = pMaxZ - pMinZ;
+                if (height >= 1.8 && sizeX >= 1.2 && sizeZ >= 1.2 && sizeX <= 180.0 && sizeZ <= 180.0) {
+                    extractedColliders.push({
+                        id: `${mapDef.id}_struct_${extractedColliders.length}`,
+                        min: [pMinX - 0.2, pMinY, pMinZ - 0.2],
+                        max: [pMaxX + 0.2, pMaxY + 0.5, pMaxZ + 0.2],
+                        name: `${mapDef.name} Structure ${extractedColliders.length + 1}`
+                    });
                 }
 
                 const vertexBuffer = this.ctx.createBuffer(interleaved, GPUBufferUsage.VERTEX);
@@ -595,6 +623,9 @@ export class CityMapRenderer {
                 await new Promise(r => setTimeout(r, 0));
             }
         }
+
+        this.mapColliders.set(mapDef.id, extractedColliders);
+        console.log(`[CityMapRenderer] Extracted ${extractedColliders.length} solid building colliders for ${mapDef.name}`);
 
         return primitives;
     }

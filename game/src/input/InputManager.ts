@@ -66,17 +66,24 @@ export class InputManager {
         // Mouse Drag Steering & Firing
         let lastX = 0;
         let lastY = 0;
+        let mouseMovedDist = 0;
 
         window.addEventListener('mousedown', (e) => {
             if (e.target === canvas || (e.target as HTMLElement).tagName === 'CANVAS') {
                 this.isMouseDown = true;
                 lastX = e.clientX;
                 lastY = e.clientY;
-                this.onShoot();
+                mouseMovedDist = 0;
             }
         });
 
-        window.addEventListener('mouseup', () => {
+        window.addEventListener('mouseup', (e) => {
+            if (this.isMouseDown) {
+                // If the user tapped/clicked without dragging (< 6 pixels movement), fire weapon!
+                if (mouseMovedDist < 6 && (e.button === 0 || e.button === undefined)) {
+                    this.onShoot();
+                }
+            }
             this.isMouseDown = false;
             lastX = 0;
             lastY = 0;
@@ -86,13 +93,14 @@ export class InputManager {
             // STRICT USER REQUIREMENT:
             // "mouse shoudl be like when user click it can change the direction
             // likewise user click and move direction it can do that if its pressing w click and trying to move the directing"
-            // We ONLY rotate view and vehicle steering when user is actively CLICKING and DRAGGING
+            // We rotate view and vehicle steering when user is clicking and dragging
             if (this.isMouseDown) {
                 if (lastX !== 0 && lastY !== 0) {
                     const dx = e.clientX - lastX;
                     const dy = e.clientY - lastY;
                     this.mouseDeltaX += dx;
                     this.mouseDeltaY += dy;
+                    mouseMovedDist += Math.hypot(dx, dy);
                 }
                 lastX = e.clientX;
                 lastY = e.clientY;

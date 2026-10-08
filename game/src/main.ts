@@ -145,15 +145,23 @@ async function bootstrap() {
         // Load new course
         missionManager.loadCourse(mapDef.id);
 
+        // Populate solid building colliders & moving entities for this map
+        collisionSystem.clearColliders();
         if (mapDef.id === 'airfield') {
             collisionSystem.initAirfieldColliders();
             entityManager.initAirfieldEntities();
+        } else if (mapDef.id === 'erangel') {
+            collisionSystem.initErangelColliders(mapDef.groundElevation);
+            entityManager.initMapEntities(mapDef.id, mapDef.spawnPos, mapDef.groundElevation);
         } else {
-            collisionSystem.clearColliders();
-            entityManager.entities = [];
+            const glbColliders = cityMapRenderer.getMapColliders(mapDef.id);
+            for (const b of glbColliders) {
+                collisionSystem.addAABB(b.min, b.max, b.name || b.id);
+            }
+            entityManager.initMapEntities(mapDef.id, mapDef.spawnPos, mapDef.groundElevation);
         }
 
-        console.log(`[Game] Switched to map: ${mapDef.name}`);
+        console.log(`[Game] Switched to map: ${mapDef.name} (${collisionSystem['aabbs']?.length || 0} AABB colliders, ${collisionSystem['cylinders']?.length || 0} cylinders)`);
     }
 
     // Input Handlers
@@ -316,7 +324,8 @@ async function bootstrap() {
         const col = collisionSystem.resolveDroneCollision(pos, vel, 0.45);
         if (col.hit) {
             soundManager.playThud();
-            physics.resetPosition(pos[0], pos[1], pos[2]);
+            physics.setPosition(pos[0], pos[1], pos[2]);
+            physics.setVelocity(vel[0], vel[1], vel[2]);
         }
 
         // 2. Update Moving Entities (Airport Ground Crew, Patrol Rover, Target Drones)

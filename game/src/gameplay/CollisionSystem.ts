@@ -105,11 +105,68 @@ export class CollisionSystem {
                 name: b.name
             });
         }
+
+        // 5. Natural Vegetation Pine Trees (22 trees surrounding airfield)
+        const treePositions = [
+            [-20, 20], [-25, 28], [-18, 35], [-30, 10], [-22, -15], [-26, -20],
+            [25, 15], [30, 30], [35, -20], [28, -40], [45, 5], [50, 40],
+            [-70, 70], [-75, 50], [-80, 20], [-65, -80], [-80, -70],
+            [75, -80], [90, -50], [85, 10], [95, 60], [80, 80],
+        ];
+        for (let i = 0; i < treePositions.length; i++) {
+            const [tx, tz] = treePositions[i];
+            this.cylinders.push({
+                id: `airfield_tree_${i}`,
+                center: [tx, tz],
+                radius: 1.6,
+                minY: 0,
+                maxY: 8.0,
+                name: `Pine Tree #${i + 1}`
+            });
+        }
     }
 
     public clearColliders(): void {
         this.aabbs = [];
         this.cylinders = [];
+    }
+
+    public initErangelColliders(groundY: number = 19.3): void {
+        // Military Radio Watchtowers & Bunkers near spawn (0, 22, 300)
+        this.cylinders.push({
+            id: 'erangel_radar_tower',
+            center: [25, 320],
+            radius: 3.2,
+            minY: groundY,
+            maxY: groundY + 28.0,
+            name: 'Military Radar Mast'
+        });
+        this.cylinders.push({
+            id: 'erangel_water_tower',
+            center: [-35, 340],
+            radius: 4.5,
+            minY: groundY,
+            maxY: groundY + 22.0,
+            name: 'Outpost Water Tower'
+        });
+        this.aabbs.push({
+            id: 'erangel_barracks_1',
+            min: [-22, groundY, 280],
+            max: [-6, groundY + 6.5, 310],
+            name: 'Military Barracks North'
+        });
+        this.aabbs.push({
+            id: 'erangel_hangar',
+            min: [15, groundY, 260],
+            max: [45, groundY + 11.0, 295],
+            name: 'Vehicle Depot Warehouse'
+        });
+        this.aabbs.push({
+            id: 'erangel_command_post',
+            min: [-10, groundY, 325],
+            max: [10, groundY + 8.5, 350],
+            name: 'Tactical Command Bunker'
+        });
     }
 
     public addAABB(min: [number, number, number], max: [number, number, number], id: string = 'custom'): void {
