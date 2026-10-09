@@ -1,5 +1,7 @@
 import { SensorOutput } from '../wasm/PhysicsBridge';
 import { MAP_CATALOG, MapDefinition } from '../gpu/CityMapRenderer';
+import { Camera } from '../scene/Camera';
+import { FocusTargetResult } from '../gameplay/WeaponSystem';
 
 export class HUD {
     private container: HTMLElement;
@@ -23,48 +25,71 @@ export class HUD {
     private mapButtons: Map<string, HTMLButtonElement> = new Map();
     private speedModeEl!: HTMLElement;
     private audioEl!: HTMLElement;
-    private loadingOverlay!: HTMLElement;
-    private loadingBarFill!: HTMLElement;
-    private loadingText!: HTMLElement;
-    private hitMarkerEl!: HTMLElement | null;
+    private scopeGearEl!: HTMLElement;
+    private lockStatusEl!: HTMLElement;
+
+    // Precision Crosshair / Target Lock
     private reticleSvgEl!: SVGElement | null;
     private targetLockLabelEl!: HTMLElement | null;
+    private hitMarkerEl!: HTMLElement | null;
     private pointerStatusEl!: HTMLElement | null;
 
-    public onMapSelect?: (mapDef: MapDefinition) => void;
+    // Tactical Scope Gearing & ADS Overlay
+    private scopeOverlayEl!: HTMLElement;
+    private scopeGearLabelEl!: HTMLElement | null;
+    private scopeWeaponModeEl!: HTMLElement | null;
+    private scopeClosureEl!: HTMLElement | null;
+    private scopeElevationEl!: HTMLElement | null;
+
+    // Predictive Lead Pip
+    private leadPipEl!: HTMLElement;
+
+    // Map Loading UI
+    private loadingOverlay!: HTMLElement;
+    private loadingText!: HTMLElement;
+    private loadingBarFill!: HTMLElement;
+
+    // Callbacks
+    public onMapSelect?: (map: MapDefinition) => void;
     public onSpeedModeToggle?: () => void;
     public onAudioToggle?: () => void;
+    public onScopeToggle?: () => void;
+    public onScopeGearToggle?: () => void;
+    public onLockTargetToggle?: () => void;
 
     constructor() {
         this.container = document.createElement('div');
         this.container.id = 'hud-container';
         this.container.style.cssText = `
             position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
+            inset: 0;
             pointer-events: none;
-            font-family: 'Segoe UI', Roboto, -apple-system, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
             color: #00ffcc;
-            text-shadow: 0 0 6px rgba(0, 255, 204, 0.5);
-            padding: 16px 20px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
+            text-shadow: 0 0 4px rgba(0, 255, 204, 0.6);
             overflow: hidden;
             user-select: none;
         `;
+        document.body.appendChild(this.container);
 
-        // 1. Top Section: Map Switcher Bar & Mission Tracker
+        this.initDOM();
+    }
+
+    private initDOM(): void {
+        // 1. Top Bar Container
         const topRow = document.createElement('div');
         topRow.style.cssText = `
+            position: absolute;
+            top: 16px;
+            left: 20px;
+            right: 20px;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            width: 100%;
-            gap: 16px;
+            pointer-events: none;
         `;
 
-        // Top Left: Flight Telemetry Panel
+        // Top Left: Flight Telemetry
         const leftPanel = document.createElement('div');
         leftPanel.style.cssText = `
             background: rgba(10, 22, 34, 0.82);
@@ -78,9 +103,9 @@ export class HUD {
             gap: 6px;
             font-size: 15px;
             font-weight: 600;
-            min-width: 180px;
+            min-width: 170px;
+            pointer-events: auto;
         `;
-
         this.altEl = document.createElement('div');
         this.spdEl = document.createElement('div');
         this.hdgEl = document.createElement('div');
@@ -88,7 +113,7 @@ export class HUD {
         leftPanel.appendChild(this.spdEl);
         leftPanel.appendChild(this.hdgEl);
 
-        // Top Center: Map Switcher Toolbar & Race Dashboard
+        // Top Center: Map Switcher & Mission Objective
         const centerCol = document.createElement('div');
         centerCol.style.cssText = `
             display: flex;
@@ -98,95 +123,79 @@ export class HUD {
             pointer-events: auto;
         `;
 
+        // Map Selection Toolbar
         this.mapToolbar = document.createElement('div');
         this.mapToolbar.style.cssText = `
             display: flex;
             gap: 8px;
-            background: rgba(8, 16, 26, 0.88);
+            background: rgba(8, 18, 28, 0.9);
             backdrop-filter: blur(12px);
             padding: 6px 12px;
-            border-radius: 24px;
-            border: 1px solid rgba(0, 255, 204, 0.4);
-            box-shadow: 0 4px 25px rgba(0, 0, 0, 0.6);
+            border-radius: 20px;
+            border: 1px solid rgba(0, 255, 204, 0.45);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
         `;
 
-        MAP_CATALOG.forEach((m, idx) => {
+        for (let i = 0; i < MAP_CATALOG.length; i++) {
+            const mapDef = MAP_CATALOG[i];
             const btn = document.createElement('button');
-            const shortNames: Record<string, string> = {
-                'erangel': 'Erangel (PUBG)',
-                'street_city': 'Pochinki Canyons',
-                'tram_station': 'Tram Metropolis',
-                'amsterdam': 'Amsterdam Terminal',
-                'airfield': 'Airfield Runway'
-            };
-            const label = shortNames[m.id] || m.name;
-            btn.innerHTML = `<span style="opacity:0.75;font-size:11px;margin-right:4px;">[${idx + 1}]</span>${label}`;
-            btn.title = `${m.name}: ${m.description}`;
+            btn.innerText = `[${i + 1}] ${mapDef.name.toUpperCase()}`;
             btn.style.cssText = `
-                background: ${idx === 0 ? 'rgba(0, 255, 204, 0.25)' : 'rgba(255, 255, 255, 0.05)'};
-                color: ${idx === 0 ? '#00ffcc' : '#e0e0e0'};
-                border: 1px solid ${idx === 0 ? '#00ffcc' : 'rgba(255, 255, 255, 0.15)'};
-                border-radius: 16px;
-                padding: 6px 14px;
-                font-size: 13px;
-                font-weight: 600;
+                background: ${i === 0 ? 'rgba(0, 255, 204, 0.35)' : 'rgba(255, 255, 255, 0.08)'};
+                color: ${i === 0 ? '#fff' : '#00ffcc'};
+                border: 1px solid ${i === 0 ? '#00ffcc' : 'rgba(0, 255, 204, 0.25)'};
+                border-radius: 12px;
+                padding: 5px 12px;
+                font-size: 12px;
+                font-weight: 700;
                 cursor: pointer;
                 transition: all 0.2s ease;
-                outline: none;
             `;
+            btn.onclick = () => {
+                this.setActiveMapButton(mapDef.id);
+                this.onMapSelect?.(mapDef);
+            };
             btn.onmouseenter = () => {
-                btn.style.background = 'rgba(0, 255, 204, 0.35)';
-                btn.style.color = '#ffffff';
+                btn.style.background = 'rgba(0, 255, 204, 0.4)';
             };
             btn.onmouseleave = () => {
-                const isActive = this.mapButtons.get(m.id) === btn && btn.getAttribute('data-active') === 'true';
-                btn.style.background = isActive ? 'rgba(0, 255, 204, 0.25)' : 'rgba(255, 255, 255, 0.05)';
-                btn.style.color = isActive ? '#00ffcc' : '#e0e0e0';
+                const isActive = this.mapButtons.get(mapDef.id)?.classList.contains('active');
+                btn.style.background = isActive ? 'rgba(0, 255, 204, 0.35)' : 'rgba(255, 255, 255, 0.08)';
             };
-            btn.onclick = () => {
-                this.onMapSelect?.(m);
-            };
-            this.mapButtons.set(m.id, btn);
+            this.mapButtons.set(mapDef.id, btn);
             this.mapToolbar.appendChild(btn);
-        });
+        }
 
-        // Race / Checkpoint Display
+        // Mission Progress Card
         this.missionPanel = document.createElement('div');
         this.missionPanel.style.cssText = `
-            display: flex;
-            gap: 20px;
-            background: rgba(10, 22, 34, 0.85);
+            background: rgba(12, 26, 40, 0.85);
             backdrop-filter: blur(10px);
-            padding: 8px 24px;
-            border-radius: 20px;
+            padding: 8px 18px;
+            border-radius: 14px;
             border: 1px solid rgba(255, 204, 0, 0.5);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-            font-size: 14px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
             font-weight: 700;
             color: #ffcc00;
         `;
-
         this.ringProgressEl = document.createElement('div');
-        this.ringProgressEl.innerText = 'RINGS: 0 / 11';
         this.scoreEl = document.createElement('div');
-        this.scoreEl.innerText = 'SCORE: 0';
         this.lapTimerEl = document.createElement('div');
-        this.lapTimerEl.innerText = 'TIME: 00:00.0';
-
         this.missionPanel.appendChild(this.ringProgressEl);
         this.missionPanel.appendChild(this.scoreEl);
         this.missionPanel.appendChild(this.lapTimerEl);
 
-        // Center on-screen banner for ring popups
+        // Notification Banner
         this.notificationEl = document.createElement('div');
         this.notificationEl.style.cssText = `
-            font-size: 20px;
+            font-size: 14px;
             font-weight: 800;
-            color: #00ffcc;
-            text-shadow: 0 0 15px rgba(0, 255, 204, 0.8);
             letter-spacing: 1px;
-            min-height: 28px;
-            text-align: center;
+            color: #00ff88;
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.9);
             opacity: 0;
             transition: opacity 0.25s ease;
         `;
@@ -195,7 +204,7 @@ export class HUD {
         centerCol.appendChild(this.missionPanel);
         centerCol.appendChild(this.notificationEl);
 
-        // Top Right: Systems & Modes Panel
+        // Top Right: Systems, Modes & Combat Targeting Panel
         const rightPanel = document.createElement('div');
         rightPanel.style.cssText = `
             background: rgba(10, 22, 34, 0.82);
@@ -207,9 +216,9 @@ export class HUD {
             display: flex;
             flex-direction: column;
             gap: 6px;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
-            min-width: 190px;
+            min-width: 200px;
             pointer-events: auto;
         `;
 
@@ -226,6 +235,22 @@ export class HUD {
         `;
         this.speedModeEl.onclick = () => this.onSpeedModeToggle?.();
 
+        this.scopeGearEl = document.createElement('div');
+        this.scopeGearEl.style.cssText = `
+            color: #ff55cc;
+            cursor: pointer;
+            padding: 2px 0;
+        `;
+        this.scopeGearEl.onclick = () => this.onScopeGearToggle?.();
+
+        this.lockStatusEl = document.createElement('div');
+        this.lockStatusEl.style.cssText = `
+            color: #ff3366;
+            cursor: pointer;
+            padding: 2px 0;
+        `;
+        this.lockStatusEl.onclick = () => this.onLockTargetToggle?.();
+
         this.audioEl = document.createElement('div');
         this.audioEl.style.cssText = `
             color: #00ffcc;
@@ -239,6 +264,8 @@ export class HUD {
         rightPanel.appendChild(this.modeEl);
         rightPanel.appendChild(this.stateEl);
         rightPanel.appendChild(this.speedModeEl);
+        rightPanel.appendChild(this.scopeGearEl);
+        rightPanel.appendChild(this.lockStatusEl);
         rightPanel.appendChild(this.audioEl);
 
         topRow.appendChild(leftPanel);
@@ -269,19 +296,18 @@ export class HUD {
         `;
         controlsHint.innerHTML = `
             <span id="hud-pointer-status" style="color:#00ffcc; font-weight:bold;">[CLICK TO LOCK AIM]</span>
-            <span style="color:#ff3366;"><b>[LEFT-CLICK / F]</b> RAPID FIRE</span>
-            <span style="color:#ffcc00;"><b>[W / S]</b> FORWARD / BACK</span>
-            <span style="color:#ff9999;"><b>[A / D]</b> STRAFE L/R</span>
+            <span style="color:#ff3366;"><b>[LEFT-CLICK / F]</b> FIRE LASER</span>
+            <span style="color:#ff55cc;"><b>[RIGHT-CLICK / Z]</b> SCOPE GEAR</span>
+            <span style="color:#ffcc00;"><b>[T / MMB]</b> LOCK TARGET</span>
+            <span style="color:#ffaa66;"><b>[W / S / A / D]</b> MOVE FLIGHT</span>
             <span style="color:#33ffdd;"><b>[Q / E]</b> TURN HEADING</span>
-            <span style="color:#33ff99;"><b>[HOLD SHIFT]</b> CLIMB</span>
-            <span style="color:#ffaa66;"><b>[CTRL]</b> DESCEND / LAND</span>
-            <span style="color:#66ccff;"><b>[R]</b> SPEED MODE</span>
-            <span style="color:#ff66cc;"><b>[V]</b> CAMERA</span>
-            <span style="color:#ffff66;"><b>[1 - 5]</b> MAPS</span>
+            <span style="color:#33ff99;"><b>[SHIFT]</b> CLIMB</span>
+            <span style="color:#66ccff;"><b>[CTRL]</b> DESCEND</span>
+            <span style="color:#ff99bb;"><b>[R]</b> SPEED MODE</span>
         `;
         this.pointerStatusEl = controlsHint.querySelector('#hud-pointer-status');
 
-        // 3. Holographic Precision Reticle / Crosshair & Dynamic Target Lock Readout
+        // 3. Holographic Precision Reticle / Dynamic Lock Readout
         const crosshairContainer = document.createElement('div');
         crosshairContainer.style.cssText = `
             position: absolute;
@@ -295,13 +321,15 @@ export class HUD {
             justify-content: center;
         `;
         crosshairContainer.innerHTML = `
-            <svg id="hud-reticle-svg" width="56" height="56" viewBox="0 0 56 56" style="transition: all 0.15s ease-out; opacity: 0.9;">
-                <circle id="reticle-circle" cx="28" cy="28" r="16" fill="none" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="6 4" />
-                <line id="reticle-top" x1="28" y1="4" x2="28" y2="15" stroke="#00ffcc" stroke-width="2" />
-                <line id="reticle-bot" x1="28" y1="41" x2="28" y2="52" stroke="#00ffcc" stroke-width="2" />
-                <line id="reticle-left" x1="4" y1="28" x2="15" y2="28" stroke="#00ffcc" stroke-width="2" />
-                <line id="reticle-right" x1="41" y1="28" x2="52" y2="28" stroke="#00ffcc" stroke-width="2" />
-                <circle id="reticle-dot" cx="28" cy="28" r="2.5" fill="#00ffcc" />
+            <svg id="hud-reticle-svg" width="64" height="64" viewBox="0 0 64 64" style="transition: all 0.12s ease-out; opacity: 0.95;">
+                <!-- Precision Boresight Crosshair -->
+                <circle id="reticle-outer" cx="32" cy="32" r="20" fill="none" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="8 4" />
+                <circle id="reticle-inner" cx="32" cy="32" r="10" fill="none" stroke="#00ffcc" stroke-width="1.2" />
+                <line id="reticle-top" x1="32" y1="4" x2="32" y2="16" stroke="#00ffcc" stroke-width="2" />
+                <line id="reticle-bot" x1="32" y1="48" x2="32" y2="60" stroke="#00ffcc" stroke-width="2" />
+                <line id="reticle-left" x1="4" y1="32" x2="16" y2="32" stroke="#00ffcc" stroke-width="2" />
+                <line id="reticle-right" x1="48" y1="32" x2="60" y2="32" stroke="#00ffcc" stroke-width="2" />
+                <circle id="reticle-dot" cx="32" cy="32" r="2.5" fill="#00ffcc" />
             </svg>
             <div id="hud-target-lock-label" style="font-size:11px; font-weight:800; letter-spacing:1px; color:#00ffcc; text-shadow:0 0 8px rgba(0,255,204,0.8); margin-top:4px; white-space:nowrap;"></div>
             <div id="hud-hit-marker" style="font-size:13px; font-weight:800; color:#ff3333; opacity:0; transition:opacity 0.1s; margin-top:4px; text-shadow:0 0 10px rgba(255,0,0,0.8);">✕ HIT!</div>
@@ -311,7 +339,76 @@ export class HUD {
         this.targetLockLabelEl = crosshairContainer.querySelector('#hud-target-lock-label');
         this.hitMarkerEl = crosshairContainer.querySelector('#hud-hit-marker');
 
-        // 3. Loading Overlay for High-Res Maps
+        // 4. Tactical Optical Scope Overlay & Mil-dot Reticle
+        this.scopeOverlayEl = document.createElement('div');
+        this.scopeOverlayEl.id = 'hud-scope-overlay';
+        this.scopeOverlayEl.style.cssText = `
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: none;
+            background: radial-gradient(circle at center, transparent 32%, rgba(2, 6, 12, 0.65) 45%, rgba(0, 0, 0, 0.95) 68%);
+            z-index: 50;
+        `;
+        this.scopeOverlayEl.innerHTML = `
+            <div style="position:absolute; top:28px; left:50%; transform:translateX(-50%); color:#00ffcc; font-family:monospace; font-size:13px; font-weight:bold; letter-spacing:2px; text-shadow:0 0 10px rgba(0,255,204,0.8); background:rgba(0,15,25,0.7); padding:4px 18px; border-radius:12px; border:1px solid rgba(0,255,204,0.4);">
+                TACTICAL BALLISTIC OPTICS // <span id="scope-gear-label" style="color:#ffcc00;">SCOPE: 2X</span>
+            </div>
+            <div style="position:absolute; bottom:68px; left:50%; transform:translateX(-50%); display:flex; gap:20px; font-family:monospace; font-size:12px; font-weight:bold; color:#00ffcc; background:rgba(0,10,20,0.7); padding:6px 20px; border-radius:16px; border:1px solid rgba(0,255,204,0.3);">
+                <span id="scope-weapon-mode" style="color:#ff55cc;">MODE: DUAL PLASMA</span>
+                <span id="scope-closure-rate">CLOSURE: 0.0 m/s</span>
+                <span id="scope-elevation-mil">ELEV: 0.0 MIL</span>
+            </div>
+            <svg width="100%" height="100%" style="position:absolute; inset:0;">
+                <circle cx="50%" cy="50%" r="220" fill="none" stroke="rgba(0,255,204,0.45)" stroke-width="1.5" stroke-dasharray="12 6" />
+                <circle cx="50%" cy="50%" r="140" fill="none" stroke="rgba(0,255,204,0.25)" stroke-width="1" />
+                <line x1="50%" y1="calc(50% - 220px)" x2="50%" y2="calc(50% - 20px)" stroke="#00ffcc" stroke-width="1.5" />
+                <line x1="50%" y1="calc(50% + 20px)" x2="50%" y2="calc(50% + 220px)" stroke="#00ffcc" stroke-width="1.5" />
+                <line x1="calc(50% - 220px)" y1="50%" x2="calc(50% - 20px)" y2="50%" stroke="#00ffcc" stroke-width="1.5" />
+                <line x1="calc(50% + 20px)" y1="50%" x2="calc(50% + 220px)" y2="50%" stroke="#00ffcc" stroke-width="1.5" />
+                <circle cx="50%" cy="calc(50% - 60px)" r="2.5" fill="#00ffcc" />
+                <circle cx="50%" cy="calc(50% - 120px)" r="2.5" fill="#00ffcc" />
+                <circle cx="50%" cy="calc(50% - 180px)" r="2.5" fill="#00ffcc" />
+                <circle cx="50%" cy="calc(50% + 60px)" r="2.5" fill="#00ffcc" />
+                <circle cx="50%" cy="calc(50% + 120px)" r="2.5" fill="#00ffcc" />
+                <circle cx="50%" cy="calc(50% + 180px)" r="2.5" fill="#00ffcc" />
+                <circle cx="calc(50% - 60px)" cy="50%" r="2.5" fill="#00ffcc" />
+                <circle cx="calc(50% - 120px)" cy="50%" r="2.5" fill="#00ffcc" />
+                <circle cx="calc(50% - 180px)" cy="50%" r="2.5" fill="#00ffcc" />
+                <circle cx="calc(50% + 60px)" cy="50%" r="2.5" fill="#00ffcc" />
+                <circle cx="calc(50% + 120px)" cy="50%" r="2.5" fill="#00ffcc" />
+                <circle cx="calc(50% + 180px)" cy="50%" r="2.5" fill="#00ffcc" />
+            </svg>
+        `;
+        this.container.appendChild(this.scopeOverlayEl);
+        this.scopeGearLabelEl = this.scopeOverlayEl.querySelector('#scope-gear-label');
+        this.scopeWeaponModeEl = this.scopeOverlayEl.querySelector('#scope-weapon-mode');
+        this.scopeClosureEl = this.scopeOverlayEl.querySelector('#scope-closure-rate');
+        this.scopeElevationEl = this.scopeOverlayEl.querySelector('#scope-elevation-mil');
+
+        // 5. Predictive Lead Pip Indicator
+        this.leadPipEl = document.createElement('div');
+        this.leadPipEl.id = 'hud-lead-pip';
+        this.leadPipEl.style.cssText = `
+            position: absolute;
+            transform: translate(-50%, -50%);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            pointer-events: none;
+            z-index: 60;
+            transition: left 0.04s linear, top 0.04s linear;
+        `;
+        this.leadPipEl.innerHTML = `
+            <svg width="40" height="40" viewBox="0 0 40 40">
+                <polygon points="20,2 38,20 20,38 2,20" fill="none" stroke="#ffcc00" stroke-width="2" stroke-dasharray="4 2" />
+                <circle cx="20" cy="20" r="3.5" fill="#ffcc00" />
+            </svg>
+            <div style="font-family:monospace; font-size:10px; font-weight:800; color:#ffcc00; text-shadow:0 0 8px rgba(255,204,0,0.9); margin-top:2px;">◎ LEAD</div>
+        `;
+        this.container.appendChild(this.leadPipEl);
+
+        // 6. Loading Overlay for High-Res Maps
         this.loadingOverlay = document.createElement('div');
         this.loadingOverlay.style.cssText = `
             position: absolute;
@@ -350,7 +447,7 @@ export class HUD {
         this.loadingBarFill.style.cssText = `
             width: 0%;
             height: 100%;
-            background: linear-gradient(90deg, #00ffcc, #ffcc00);
+            background: linear-gradient(90deg, #00ffcc, #ffaa00);
             transition: width 0.15s ease;
         `;
         barContainer.appendChild(this.loadingBarFill);
@@ -360,18 +457,21 @@ export class HUD {
         this.container.appendChild(topRow);
         this.container.appendChild(controlsHint);
         this.container.appendChild(this.loadingOverlay);
-        document.body.appendChild(this.container);
-
-        this.setActiveMapButton('airfield');
     }
 
     public setActiveMapButton(mapId: string): void {
         this.mapButtons.forEach((btn, id) => {
-            const isActive = id === mapId;
-            btn.setAttribute('data-active', isActive ? 'true' : 'false');
-            btn.style.background = isActive ? 'rgba(0, 255, 204, 0.25)' : 'rgba(255, 255, 255, 0.05)';
-            btn.style.color = isActive ? '#00ffcc' : '#e0e0e0';
-            btn.style.borderColor = isActive ? '#00ffcc' : 'rgba(255, 255, 255, 0.15)';
+            if (id === mapId) {
+                btn.classList.add('active');
+                btn.style.background = 'rgba(0, 255, 204, 0.35)';
+                btn.style.color = '#fff';
+                btn.style.borderColor = '#00ffcc';
+            } else {
+                btn.classList.remove('active');
+                btn.style.background = 'rgba(255, 255, 255, 0.08)';
+                btn.style.color = '#00ffcc';
+                btn.style.borderColor = 'rgba(0, 255, 204, 0.25)';
+            }
         });
     }
 
@@ -403,8 +503,9 @@ export class HUD {
         isMuted: boolean,
         hitMarkerTimer: number = 0,
         hitMarkerText: string = "",
-        targetFocus?: { distance: number; lockedEntity: any } | null,
-        isPointerLocked: boolean = false
+        targetFocus?: FocusTargetResult | null,
+        isPointerLocked: boolean = false,
+        camera?: Camera
     ): void {
         const groundSpeed = Math.sqrt(vel[0] * vel[0] + vel[2] * vel[2]);
         this.altEl.innerText = `ALT (AGL): ${sensors.altitudeAGL.toFixed(1)} m`;
@@ -417,6 +518,23 @@ export class HUD {
         this.stateEl.innerHTML = `STATE: <span style="color:${armed ? '#00ff66' : '#ff3333'}; font-weight: bold;">${armed ? '● ARMED' : '○ DISARMED'}</span>`;
         this.speedModeEl.innerHTML = `[R] SPEED: <b>${speedMode}</b>`;
         this.audioEl.innerHTML = `[M] AUDIO: <b>${isMuted ? '<span style="color:#ff6666">MUTED</span>' : 'ACTIVE'}</b>`;
+
+        // Scope Gear & Target Lock Quick Status
+        if (camera) {
+            if (camera.isScoped) {
+                this.scopeGearEl.innerHTML = `[Z] SCOPE: <b style="color:#00ffcc">${camera.scopeGear}X [ACTIVE]</b>`;
+            } else {
+                this.scopeGearEl.innerHTML = `[Z] SCOPE: <b>${camera.scopeGear}X [OFF]</b>`;
+            }
+        }
+
+        if (targetFocus?.lockedEntity) {
+            this.lockStatusEl.innerHTML = `[T] LOCK: <b style="color:#ff3355;">${targetFocus.lockedEntity.roleName.toUpperCase()}</b>`;
+        } else if (targetFocus?.candidateEntity) {
+            this.lockStatusEl.innerHTML = `[T] ACQUIRING: <b style="color:#ffcc00;">${targetFocus.candidateEntity.roleName}</b>`;
+        } else {
+            this.lockStatusEl.innerHTML = `[T] LOCK: <b>STANDBY</b>`;
+        }
 
         this.ringProgressEl.innerText = `RINGS: ${ringsPassed} / ${totalRings}`;
         this.scoreEl.innerText = `SCORE: ${score}`;
@@ -441,26 +559,92 @@ export class HUD {
             }
         }
 
-        // Precision Crosshair / Target Lock HUD
+        // Tactical Scope Overlay Update
+        if (camera && this.scopeOverlayEl) {
+            if (camera.isScoped) {
+                this.scopeOverlayEl.style.display = 'block';
+                if (this.scopeGearLabelEl) {
+                    this.scopeGearLabelEl.innerText = `SCOPE: ${camera.scopeGear}X MAG`;
+                }
+                if (this.scopeWeaponModeEl) {
+                    this.scopeWeaponModeEl.innerText = targetFocus?.weaponMode === 'SNIPER_RAILGUN'
+                        ? '⚡ HIGH-VELOCITY RAILGUN (460 m/s)'
+                        : '✦ RAPID-FIRE DUAL PLASMA (280 m/s)';
+                }
+                if (this.scopeClosureEl) {
+                    this.scopeClosureEl.innerText = `CLOSURE: ${(targetFocus?.targetClosureSpeed || 0).toFixed(1)} m/s`;
+                }
+                if (this.scopeElevationEl) {
+                    this.scopeElevationEl.innerText = `ELEV: ${(camera.mouseOrbitPitch * (1000 / Math.PI)).toFixed(1)} MIL`;
+                }
+            } else {
+                this.scopeOverlayEl.style.display = 'none';
+            }
+        }
+
+        // Predictive Lead Intercept Reticle Update
+        if (targetFocus?.predictedLeadPoint && camera && this.leadPipEl) {
+            const screen = camera.projectToScreen(
+                targetFocus.predictedLeadPoint,
+                window.innerWidth,
+                window.innerHeight
+            );
+            if (screen.visible) {
+                this.leadPipEl.style.display = 'flex';
+                this.leadPipEl.style.left = `${screen.x}px`;
+                this.leadPipEl.style.top = `${screen.y}px`;
+            } else {
+                this.leadPipEl.style.display = 'none';
+            }
+        } else if (this.leadPipEl) {
+            this.leadPipEl.style.display = 'none';
+        }
+
+        // Precision Crosshair / Target Lock Readout
         if (this.reticleSvgEl && this.targetLockLabelEl) {
-            if (targetFocus && targetFocus.lockedEntity) {
+            if (targetFocus && targetFocus.lockState === 'LOCKED' && targetFocus.lockedEntity) {
                 const ent = targetFocus.lockedEntity;
-                const entName = ent.name || ent.id || 'TARGET';
+                const entName = ent.roleName || ent.id || 'TARGET';
                 const distStr = `${targetFocus.distance.toFixed(0)}m`;
-                
-                // Color shift to neon red/crimson on lock
+                const hpPct = Math.max(0, Math.round((ent.health / ent.maxHealth) * 100));
+
                 this.reticleSvgEl.querySelectorAll('circle, line').forEach(el => {
                     (el as SVGElement).setAttribute('stroke', '#ff2244');
                     if (el.tagName === 'circle' && el.getAttribute('fill') !== 'none') {
                         (el as SVGElement).setAttribute('fill', '#ff2244');
                     }
                 });
-                this.reticleSvgEl.style.transform = 'scale(1.22)';
-                this.targetLockLabelEl.innerHTML = `🎯 LOCKED: <span style="color:#ff3355;">${entName.toUpperCase()}</span> [${distStr}]`;
+                this.reticleSvgEl.style.transform = 'scale(1.24)';
+                this.targetLockLabelEl.innerHTML = `🎯 LOCKED: <span style="color:#ff3355;">${entName.toUpperCase()}</span> [${distStr}] | HP: ${hpPct}%`;
                 this.targetLockLabelEl.style.color = '#ff3355';
                 this.targetLockLabelEl.style.textShadow = '0 0 10px rgba(255, 34, 68, 0.9)';
+            } else if (targetFocus && targetFocus.lockState === 'ACQUIRING' && targetFocus.candidateEntity) {
+                const ent = targetFocus.candidateEntity;
+                const pct = (targetFocus.acquireProgress * 100).toFixed(0);
+
+                this.reticleSvgEl.querySelectorAll('circle, line').forEach(el => {
+                    (el as SVGElement).setAttribute('stroke', '#ffcc00');
+                    if (el.tagName === 'circle' && el.getAttribute('fill') !== 'none') {
+                        (el as SVGElement).setAttribute('fill', '#ffcc00');
+                    }
+                });
+                this.reticleSvgEl.style.transform = 'scale(1.15)';
+                this.targetLockLabelEl.innerHTML = `⟲ ACQUIRING TARGET [${pct}%]: <span style="color:#ffcc00;">${ent.roleName}</span> [${targetFocus.distance.toFixed(0)}m]`;
+                this.targetLockLabelEl.style.color = '#ffcc00';
+                this.targetLockLabelEl.style.textShadow = '0 0 8px rgba(255, 204, 0, 0.8)';
+            } else if (targetFocus && targetFocus.lockState === 'LOST') {
+                this.reticleSvgEl.querySelectorAll('circle, line').forEach(el => {
+                    (el as SVGElement).setAttribute('stroke', '#ff8800');
+                    if (el.tagName === 'circle' && el.getAttribute('fill') !== 'none') {
+                        (el as SVGElement).setAttribute('fill', '#ff8800');
+                    }
+                });
+                this.reticleSvgEl.style.transform = 'scale(1.1)';
+                this.targetLockLabelEl.innerHTML = `⚠ LOCK INTERRUPTED [LOS MEMORY TRACK]`;
+                this.targetLockLabelEl.style.color = '#ff8800';
+                this.targetLockLabelEl.style.textShadow = '0 0 8px rgba(255, 136, 0, 0.8)';
             } else {
-                // Idle or terrain targeting (cyan / soft green)
+                // Standby / Terrain targeting
                 this.reticleSvgEl.querySelectorAll('circle, line').forEach(el => {
                     (el as SVGElement).setAttribute('stroke', '#00ffcc');
                     if (el.tagName === 'circle' && el.getAttribute('fill') !== 'none') {

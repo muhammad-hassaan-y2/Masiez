@@ -258,6 +258,29 @@ async function bootstrap() {
         }
     };
 
+    input.onScopeToggle = () => {
+        camera.toggleScope();
+        input.isScoped = camera.isScoped;
+        soundManager.playScopeZoom(camera.scopeGear);
+        missionManager.showNotification(camera.isScoped ? `SCOPE ACTIVE: ${camera.scopeGear}X` : "SCOPE DEACTIVATED");
+    };
+
+    input.onScopeGearChange = (forward: boolean) => {
+        camera.cycleScopeGear(forward);
+        input.isScoped = camera.isScoped;
+        soundManager.playScopeZoom(camera.scopeGear);
+        missionManager.showNotification(`SCOPE GEAR: ${camera.scopeGear}X`);
+    };
+
+    input.onLockTarget = () => {
+        weaponSystem.toggleLock(camera, entityManager, soundManager);
+        if (weaponSystem.lockedEntity) {
+            missionManager.showNotification(`TARGET LOCKED: ${weaponSystem.lockedEntity.roleName.toUpperCase()}`);
+        } else {
+            missionManager.showNotification("TARGET LOCK DISENGAGED");
+        }
+    };
+
     input.onEmergencyStop = () => {
         physics.arm(false);
         console.log("EMERGENCY STOP!");
@@ -274,6 +297,18 @@ async function bootstrap() {
 
     hud.onAudioToggle = () => {
         input.onMuteToggle();
+    };
+
+    hud.onScopeToggle = () => {
+        input.onScopeToggle();
+    };
+
+    hud.onScopeGearToggle = () => {
+        input.onScopeGearChange(true);
+    };
+
+    hud.onLockTargetToggle = () => {
+        input.onLockTarget();
     };
 
     // 5. Connect to Backend 1 (WebSocket)
@@ -520,10 +555,17 @@ async function bootstrap() {
         );
         camera.update(pos, rot[2], aspect, groundAtCam);
 
-        // Aim Focus & Target Lock Calculation
-        const aimFocus = weaponSystem.getFocusTarget(camera, collisionSystem, entityManager, currentMapDef.id);
+        // Aim Focus, Lock-On Tracking & Predictive Lead Intercept Calculation
+        const aimFocus = weaponSystem.updateTargetLock(
+            camera,
+            collisionSystem,
+            entityManager,
+            soundManager,
+            deltaSec,
+            currentMapDef.id
+        );
 
-        // Update HUD
+        // Update HUD with Tactical Reticle, Scope Overlay & Lead Pip
         hud.update(
             sensors,
             pos,
@@ -542,7 +584,8 @@ async function bootstrap() {
             weaponSystem.hitMarkerTimer,
             weaponSystem.hitMarkerText,
             aimFocus,
-            input.isPointerLocked
+            input.isPointerLocked,
+            camera
         );
 
         // Send telemetry to server at 10Hz

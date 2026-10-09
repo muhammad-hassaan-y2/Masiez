@@ -127,7 +127,13 @@ export class Camera {
     public invViewProjMatrix = Mat4.create();
 
     public fovRad: number = Math.PI / 3.4; // Tighter, focused perspective
+    public baseFovRad: number = Math.PI / 3.4;
     public mode: 'CHASE' | 'FPV' | 'ORBIT' = 'CHASE';
+
+    // Tactical Scope Gearing & ADS
+    public isScoped: boolean = false;
+    public scopeGear: number = 1; // 1X, 2X, 4X, 8X magnification
+    public static readonly SCOPE_GEARS = [1, 2, 4, 8];
 
     // Interactive mouse look offsets
     public mouseOrbitYaw: number = 0;   // radians (roundward 360°)
@@ -137,8 +143,36 @@ export class Camera {
 
     private initialized: boolean = false;
 
+    public toggleScope(): void {
+        this.isScoped = !this.isScoped;
+        if (!this.isScoped) {
+            this.scopeGear = 1;
+        } else if (this.scopeGear <= 1) {
+            this.scopeGear = 2; // Default to 2X on entering scope
+        }
+    }
+
+    public cycleScopeGear(forward: boolean = true): void {
+        const gears = Camera.SCOPE_GEARS;
+        let idx = gears.indexOf(this.scopeGear);
+        if (idx === -1) idx = 0;
+        if (forward) {
+            idx = (idx + 1) % gears.length;
+        } else {
+            idx = (idx - 1 + gears.length) % gears.length;
+        }
+        this.scopeGear = gears[idx];
+        if (this.scopeGear > 1) {
+            this.isScoped = true;
+        } else {
+            this.isScoped = false;
+        }
+    }
+
     public applyMouseDelta(dx: number, dy: number, zoomDelta: number): void {
-        const sensitivity = 0.0035;
+        // High magnification reduces mouse sensitivity proportionally for rock-steady sniper aiming
+        const zoomScale = this.isScoped ? (1.0 / Math.max(1.0, this.scopeGear * 0.75)) : 1.0;
+        const sensitivity = 0.0035 * zoomScale;
         // Roundward horizontal orbit (left/right around drone)
         this.mouseOrbitYaw += dx * sensitivity;
         // Vertical pitch: mouse up -> tilt view up / drone lower; mouse down -> tilt view down
@@ -146,7 +180,35 @@ export class Camera {
 
         // Clamp pitch so camera stays elevated above the drone (never dips underground or behind terrain)
         this.mouseOrbitPitch = Math.max(0.05, Math.min(1.22, this.mouseOrbitPitch));
-        this.baseDistance = Math.max(1.5, Math.min(8.0, this.baseDistance + zoomDelta));
+        if (!this.isScoped) {
+            this.baseDistance = Math.max(1.5, Math.min(8.0, this.baseDistance + zoomDelta));
+        }
+    }
+
+    public projectToScreen(
+        worldPos: [number, number, number],
+        screenWidth: number,
+        screenHeight: number
+    ): { x: number; y: number; visible: boolean } {
+        const m = this.viewProjMatrix;
+        const clipX = worldPos[0] * m[0] + worldPos[1] * m[4] + worldPos[2] * m[8] + m[12];
+        const clipY = worldPos[0] * m[1] + worldPos[1] * m[5] + worldPos[2] * m[9] + m[13];
+        const clipZ = worldPos[0] * m[2] + worldPos[1] * m[6] + worldPos[2] * m[10] + m[14];
+        const clipW = worldPos[0] * m[3] + worldPos[1] * m[7] + worldPos[2] * m[11] + m[15];
+
+        if (clipW <= 0.01) {
+            return { x: 0, y: 0, visible: false };
+        }
+
+        const ndcX = clipX / clipW;
+        const ndcY = clipY / clipW;
+        const ndcZ = clipZ / clipW;
+
+        const visible = (ndcX >= -1.05 && ndcX <= 1.05 && ndcY >= -1.05 && ndcY <= 1.05 && ndcZ >= 0.0 && ndcZ <= 1.0);
+        const screenX = (ndcX * 0.5 + 0.5) * screenWidth;
+        const screenY = (-ndcY * 0.5 + 0.5) * screenHeight;
+
+        return { x: screenX, y: screenY, visible };
     }
 
     public update(
@@ -191,6 +253,9 @@ export class Camera {
             this.target[1] = dronePos[1] - Math.sin(this.mouseOrbitPitch) * 20.0;
             this.target[2] = dronePos[2] + Math.cos(this.mouseOrbitYaw) * Math.cos(this.mouseOrbitPitch) * 20.0;
         }
+
+        const targetFov = this.isScoped ? (this.baseFovRad / Math.max(1, this.scopeGear)) : this.baseFovRad;
+        this.fovRad += (targetFov - this.fovRad) * 0.22;
 
         Mat4.perspective(this.projMatrix, this.fovRad, aspect, 0.1, 2000.0);
         Mat4.lookAt(this.viewMatrix, this.position, this.target, [0, 1, 0]);

@@ -295,6 +295,114 @@ export class SoundManager {
         osc.stop(now + 0.5);
     }
 
+    public playTargetAcquired(): void {
+        if (!this.ctx || !this.initialized || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.setValueAtTime(1174, now + 0.05);
+
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+        osc.connect(gain);
+        if (this.masterGain) gain.connect(this.masterGain);
+
+        osc.start(now);
+        osc.stop(now + 0.1);
+    }
+
+    public playTargetLocked(): void {
+        if (!this.ctx || !this.initialized || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        [0, 0.08].forEach((offset) => {
+            const osc = this.ctx!.createOscillator();
+            const gain = this.ctx!.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(1320, now + offset);
+            gain.gain.setValueAtTime(0.28, now + offset);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.07);
+            osc.connect(gain);
+            if (this.masterGain) gain.connect(this.masterGain);
+            osc.start(now + offset);
+            osc.stop(now + offset + 0.07);
+        });
+    }
+
+    public playLockLost(): void {
+        if (!this.ctx || !this.initialized || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(220, now + 0.16);
+
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+        osc.connect(gain);
+        if (this.masterGain) gain.connect(this.masterGain);
+
+        osc.start(now);
+        osc.stop(now + 0.16);
+    }
+
+    public playScopeZoom(gear: number = 1): void {
+        if (!this.ctx || !this.initialized || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        const baseF = 440 + gear * 150;
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(baseF, now);
+        osc.frequency.exponentialRampToValueAtTime(baseF * 1.6, now + 0.06);
+
+        gain.gain.setValueAtTime(0.22, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+
+        osc.connect(gain);
+        if (this.masterGain) gain.connect(this.masterGain);
+
+        osc.start(now);
+        osc.stop(now + 0.06);
+    }
+
+    public playRailgunShot(): void {
+        if (!this.ctx || !this.initialized || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        // Deep kinetic kick
+        const osc1 = this.ctx.createOscillator();
+        const gain1 = this.ctx.createGain();
+        osc1.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(140, now);
+        osc1.frequency.exponentialRampToValueAtTime(30, now + 0.28);
+        gain1.gain.setValueAtTime(0.45, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+        osc1.connect(gain1);
+        if (this.masterGain) gain1.connect(this.masterGain);
+        osc1.start(now);
+        osc1.stop(now + 0.28);
+
+        // High frequency electric discharge
+        const osc2 = this.ctx.createOscillator();
+        const gain2 = this.ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(1800, now);
+        osc2.frequency.exponentialRampToValueAtTime(400, now + 0.18);
+        gain2.gain.setValueAtTime(0.3, now);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+        osc2.connect(gain2);
+        if (this.masterGain) gain2.connect(this.masterGain);
+        osc2.start(now);
+        osc2.stop(now + 0.18);
+    }
+
     public toggleMute(): boolean {
         this.isMuted = !this.isMuted;
         if (this.masterGain && this.ctx) {

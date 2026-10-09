@@ -22,6 +22,11 @@ export class InputManager {
     public onMuteToggle: () => void = () => {};
     public onMapSelectKey: (mapIndex: number) => void = () => {};
     public onShoot: () => void = () => {};
+    public onScopeToggle: () => void = () => {};
+    public onScopeGearChange: (forward: boolean) => void = () => {};
+    public onLockTarget: () => void = () => {};
+
+    public isScoped: boolean = false;
 
     private keys: { [key: string]: boolean } = {};
     private canvas: HTMLCanvasElement;
@@ -43,6 +48,12 @@ export class InputManager {
                 this.onSpeedToggle();
             } else if (e.code === 'KeyM') {
                 this.onMuteToggle();
+            } else if (e.code === 'KeyZ') {
+                this.onScopeToggle();
+            } else if (e.code === 'KeyX') {
+                this.onScopeGearChange(true);
+            } else if (e.code === 'KeyT') {
+                this.onLockTarget();
             } else if (e.code === 'Digit1') {
                 this.onMapSelectKey(0);
             } else if (e.code === 'Digit2') {
@@ -101,6 +112,12 @@ export class InputManager {
                             canvas.requestPointerLock();
                         } catch (err) {}
                     }
+                } else if (e.button === 2) {
+                    // Right-Click: Toggle Aim Down Sights / Tactical Scope
+                    this.onScopeToggle();
+                } else if (e.button === 1) {
+                    // Middle-Click: Lock on or cycle nearest target
+                    this.onLockTarget();
                 }
             }
         });
@@ -145,8 +162,13 @@ export class InputManager {
         });
 
         window.addEventListener('wheel', (e) => {
-            // Smooth zoom: positive delta zooms out, negative zooms in
-            this.mouseZoom += Math.sign(e.deltaY) * 0.5;
+            if (this.isScoped) {
+                // When in scope mode, wheel cycles optical magnification gears (1X, 2X, 4X, 8X)
+                this.onScopeGearChange(e.deltaY < 0);
+            } else {
+                // Smooth camera chase distance zoom when not scoped
+                this.mouseZoom += Math.sign(e.deltaY) * 0.5;
+            }
         }, { passive: true });
 
         // Prevent context menu on right click drag

@@ -234,7 +234,8 @@ export class CombatRenderer {
             const normV = [vx / vLen, vy / vLen, vz / vLen];
 
             // Draw elongated laser bolt along velocity vector
-            const boltLen = 1.6;
+            const boltLen = proj.isRailgun ? 3.6 : 1.8;
+            const thickness = proj.isRailgun ? 0.22 : 0.12;
             const p0x = proj.pos[0] - normV[0] * boltLen;
             const p0y = proj.pos[1] - normV[1] * boltLen;
             const p0z = proj.pos[2] - normV[2] * boltLen;
@@ -243,7 +244,7 @@ export class CombatRenderer {
                 (proj.pos[0] + p0x) * 0.5,
                 (proj.pos[1] + p0y) * 0.5,
                 (proj.pos[2] + p0z) * 0.5,
-                0.12, 0.12, boltLen,
+                thickness, thickness, boltLen,
                 Math.atan2(normV[0], normV[2]) * (180 / Math.PI),
                 proj.color,
                 1.0 // Emissive neon plasma glow
