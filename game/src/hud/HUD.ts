@@ -362,7 +362,7 @@ export class HUD {
         this.container.appendChild(this.loadingOverlay);
         document.body.appendChild(this.container);
 
-        this.setActiveMapButton('tram_station');
+        this.setActiveMapButton('airfield');
     }
 
     public setActiveMapButton(mapId: string): void {
@@ -468,7 +468,7 @@ export class HUD {
                     }
                 });
                 this.reticleSvgEl.style.transform = 'scale(1.0)';
-                if (targetFocus && targetFocus.distance < 300) {
+                if (targetFocus && targetFocus.distance < 1150) {
                     this.targetLockLabelEl.innerText = `RANGE: ${targetFocus.distance.toFixed(0)}m`;
                     this.targetLockLabelEl.style.color = '#00ffcc';
                     this.targetLockLabelEl.style.textShadow = '0 0 8px rgba(0, 255, 204, 0.7)';

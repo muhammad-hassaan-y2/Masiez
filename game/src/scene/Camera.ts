@@ -170,24 +170,26 @@ export class Camera {
             const minAllowedY = baseElev + 0.40;
             const targetY = Math.max(minAllowedY, dronePos[1] + distVert);
 
-            // Zero-lag tracking: rigidly locked directly behind and centered on the drone
+            // Zero-lag tracking: rigidly locked behind the drone along orbit direction
             this.position[0] = targetX;
             this.position[1] = targetY;
             this.position[2] = targetZ;
             this.initialized = true;
 
-            // Target locked strictly to drone center
-            this.target[0] = dronePos[0];
-            this.target[1] = Math.max(baseElev + 0.20, dronePos[1] + 0.15);
-            this.target[2] = dronePos[2];
+            // Target looks forward through the drone along mouse view angles
+            // so crosshair at screen center points precisely along the camera gaze
+            const lookDist = 50.0;
+            this.target[0] = dronePos[0] + Math.sin(this.mouseOrbitYaw) * Math.cos(this.mouseOrbitPitch) * lookDist;
+            this.target[1] = dronePos[1] - Math.sin(this.mouseOrbitPitch) * lookDist;
+            this.target[2] = dronePos[2] + Math.cos(this.mouseOrbitYaw) * Math.cos(this.mouseOrbitPitch) * lookDist;
         } else if (this.mode === 'FPV') {
             this.position[0] = dronePos[0];
             this.position[1] = dronePos[1] + 0.20;
             this.position[2] = dronePos[2];
 
-            this.target[0] = dronePos[0] + Math.sin(this.mouseOrbitYaw) * 10.0;
-            this.target[1] = dronePos[1] - Math.sin(this.mouseOrbitPitch) * 10.0;
-            this.target[2] = dronePos[2] + Math.cos(this.mouseOrbitYaw) * 10.0;
+            this.target[0] = dronePos[0] + Math.sin(this.mouseOrbitYaw) * Math.cos(this.mouseOrbitPitch) * 20.0;
+            this.target[1] = dronePos[1] - Math.sin(this.mouseOrbitPitch) * 20.0;
+            this.target[2] = dronePos[2] + Math.cos(this.mouseOrbitYaw) * Math.cos(this.mouseOrbitPitch) * 20.0;
         }
 
         Mat4.perspective(this.projMatrix, this.fovRad, aspect, 0.1, 2000.0);

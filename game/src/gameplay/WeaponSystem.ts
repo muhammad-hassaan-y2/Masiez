@@ -49,7 +49,7 @@ export class WeaponSystem {
     ): FocusTargetResult {
         const camPos = camera.position;
         const camFwd = camera.getForwardVector();
-        const maxRange = 350.0;
+        const maxRange = 1200.0;
         const rayEnd: [number, number, number] = [
             camPos[0] + camFwd[0] * maxRange,
             camPos[1] + camFwd[1] * maxRange,
@@ -77,7 +77,7 @@ export class WeaponSystem {
                     toEnt[2] - camFwd[2] * dot
                 );
                 // Smart lock-on cone (1.4x entity radius or subtle angular cone)
-                const tolerance = Math.max(ent.radius * 1.4, dot * 0.045);
+                const tolerance = Math.max(ent.radius * 1.5, dot * 0.055);
                 if (perpDist <= tolerance) {
                     bestDist = dot;
                     targetFocusPoint = [ent.pos[0], ent.pos[1] + ent.height * 0.5, ent.pos[2]];
@@ -99,7 +99,7 @@ export class WeaponSystem {
         if (!lockedTarget) {
             let prevT = 0;
             let prevDiff = camPos[1] - collisionSystem.getGroundHeight(activeMapId, camPos[0], camPos[2], camera.currentGroundElevation);
-            const stepDist = 3.5;
+            const stepDist = 5.0;
             for (let t = stepDist; t <= Math.min(bestDist, maxRange); t += stepDist) {
                 const px = camPos[0] + camFwd[0] * t;
                 const py = camPos[1] + camFwd[1] * t;
@@ -175,15 +175,14 @@ export class WeaponSystem {
             dronePos[2] + fwdZ * 0.45 + rightZ * sideOffset
         ];
 
-        // Laser speed: 220 m/s for instant, crisp arcade response
-        const speed = 220.0;
+        // Laser speed: 250 m/s for instant laser hit accuracy across long ranges
+        const speed = 250.0;
 
         const computeVel = (muzzle: [number, number, number]): [number, number, number] => {
             const dx = targetPoint[0] - muzzle[0];
             const dy = targetPoint[1] - muzzle[1];
             const dz = targetPoint[2] - muzzle[2];
             const len = Math.hypot(dx, dy, dz) || 1.0;
-            // Pure laser vector directly to crosshair target without drift
             return [
                 (dx / len) * speed,
                 (dy / len) * speed,
@@ -195,7 +194,7 @@ export class WeaponSystem {
             pos: [m1Pos[0], m1Pos[1], m1Pos[2]],
             prevPos: [m1Pos[0], m1Pos[1], m1Pos[2]],
             vel: computeVel(m1Pos),
-            life: 2.5,
+            life: 4.5,
             color: [0.0, 1.0, 0.85, 1.0] // Neon Cyan Plasma
         });
 
@@ -203,7 +202,7 @@ export class WeaponSystem {
             pos: [m2Pos[0], m2Pos[1], m2Pos[2]],
             prevPos: [m2Pos[0], m2Pos[1], m2Pos[2]],
             vel: computeVel(m2Pos),
-            life: 2.5,
+            life: 4.5,
             color: [0.0, 1.0, 0.85, 1.0]
         });
 
