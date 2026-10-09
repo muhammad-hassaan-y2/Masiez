@@ -169,7 +169,16 @@ async function bootstrap() {
         const curPos = physics.getPosition();
         const curRot = physics.getRotation();
         const curVel = physics.getVelocity();
-        weaponSystem.fire(curPos, curRot, curVel, soundManager, performance.now() / 1000.0);
+        weaponSystem.fire(
+            curPos,
+            curRot,
+            curVel,
+            camera,
+            collisionSystem,
+            entityManager,
+            soundManager,
+            performance.now() / 1000.0
+        );
     };
 
     input.onArmToggle = () => {
@@ -346,6 +355,9 @@ async function bootstrap() {
         const aspect = canvas.width / canvas.height;
         camera.update(pos, rot[2], aspect);
 
+        // Aim Focus & Target Lock Calculation
+        const aimFocus = weaponSystem.getFocusTarget(camera, collisionSystem, entityManager);
+
         // Update HUD
         hud.update(
             sensors,
@@ -363,7 +375,9 @@ async function bootstrap() {
             missionManager.notificationText,
             soundManager.getMuted(),
             weaponSystem.hitMarkerTimer,
-            weaponSystem.hitMarkerText
+            weaponSystem.hitMarkerText,
+            aimFocus,
+            input.isPointerLocked
         );
 
         // Send telemetry to server at 10Hz

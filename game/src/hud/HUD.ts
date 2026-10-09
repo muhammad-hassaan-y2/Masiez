@@ -27,6 +27,9 @@ export class HUD {
     private loadingBarFill!: HTMLElement;
     private loadingText!: HTMLElement;
     private hitMarkerEl!: HTMLElement | null;
+    private reticleSvgEl!: SVGElement | null;
+    private targetLockLabelEl!: HTMLElement | null;
+    private pointerStatusEl!: HTMLElement | null;
 
     public onMapSelect?: (mapDef: MapDefinition) => void;
     public onSpeedModeToggle?: () => void;
@@ -265,19 +268,19 @@ export class HUD {
             pointer-events: auto;
         `;
         controlsHint.innerHTML = `
-            <span style="color:#ff3366; animation: pulse 2s infinite;"><b>[F / TAP CLICK]</b> FIRE LASERS</span>
-            <span style="color:#00ffcc;"><b>[DRAG MOUSE]</b> STEER HEADING</span>
+            <span id="hud-pointer-status" style="color:#00ffcc; font-weight:bold;">[CLICK TO LOCK AIM]</span>
+            <span style="color:#ff3366;"><b>[LEFT-CLICK / F]</b> FIRE LASERS</span>
             <span style="color:#ffcc00;"><b>[W / S]</b> FORWARD / BACK</span>
-            <span style="color:#ff9999;"><b>[A / D]</b> STEER / STRAFE</span>
+            <span style="color:#ff9999;"><b>[A / D]</b> STRAFE</span>
             <span style="color:#33ff99;"><b>[HOLD SHIFT]</b> CLIMB</span>
             <span style="color:#ffaa66;"><b>[CTRL]</b> DESCEND / LAND</span>
             <span style="color:#66ccff;"><b>[R]</b> SPEED MODE</span>
             <span style="color:#ff66cc;"><b>[V]</b> CAMERA</span>
             <span style="color:#ffff66;"><b>[1 - 5]</b> MAPS</span>
-            <span style="color:#bbbbbb;"><b>[M]</b> MUTE</span>
         `;
+        this.pointerStatusEl = controlsHint.querySelector('#hud-pointer-status');
 
-        // 3. Holographic Reticle / Crosshair & Hit Marker
+        // 3. Holographic Precision Reticle / Crosshair & Dynamic Target Lock Readout
         const crosshairContainer = document.createElement('div');
         crosshairContainer.style.cssText = `
             position: absolute;
@@ -291,17 +294,20 @@ export class HUD {
             justify-content: center;
         `;
         crosshairContainer.innerHTML = `
-            <svg width="48" height="48" viewBox="0 0 48 48" style="opacity: 0.85;">
-                <circle cx="24" cy="24" r="14" fill="none" stroke="#00ffcc" stroke-width="1.5" stroke-dasharray="6 4" />
-                <line x1="24" y1="4" x2="24" y2="14" stroke="#00ffcc" stroke-width="2" />
-                <line x1="24" y1="34" x2="24" y2="44" stroke="#00ffcc" stroke-width="2" />
-                <line x1="4" y1="24" x2="14" y2="24" stroke="#00ffcc" stroke-width="2" />
-                <line x1="34" y1="24" x2="44" y2="24" stroke="#00ffcc" stroke-width="2" />
-                <circle cx="24" cy="24" r="2.5" fill="#00ffcc" />
+            <svg id="hud-reticle-svg" width="56" height="56" viewBox="0 0 56 56" style="transition: all 0.15s ease-out; opacity: 0.9;">
+                <circle id="reticle-circle" cx="28" cy="28" r="16" fill="none" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="6 4" />
+                <line id="reticle-top" x1="28" y1="4" x2="28" y2="15" stroke="#00ffcc" stroke-width="2" />
+                <line id="reticle-bot" x1="28" y1="41" x2="28" y2="52" stroke="#00ffcc" stroke-width="2" />
+                <line id="reticle-left" x1="4" y1="28" x2="15" y2="28" stroke="#00ffcc" stroke-width="2" />
+                <line id="reticle-right" x1="41" y1="28" x2="52" y2="28" stroke="#00ffcc" stroke-width="2" />
+                <circle id="reticle-dot" cx="28" cy="28" r="2.5" fill="#00ffcc" />
             </svg>
-            <div id="hud-hit-marker" style="font-size:13px; font-weight:800; color:#ff3333; opacity:0; transition:opacity 0.1s; margin-top:6px; text-shadow:0 0 10px rgba(255,0,0,0.8);">✕ HIT!</div>
+            <div id="hud-target-lock-label" style="font-size:11px; font-weight:800; letter-spacing:1px; color:#00ffcc; text-shadow:0 0 8px rgba(0,255,204,0.8); margin-top:4px; white-space:nowrap;"></div>
+            <div id="hud-hit-marker" style="font-size:13px; font-weight:800; color:#ff3333; opacity:0; transition:opacity 0.1s; margin-top:4px; text-shadow:0 0 10px rgba(255,0,0,0.8);">✕ HIT!</div>
         `;
         this.container.appendChild(crosshairContainer);
+        this.reticleSvgEl = crosshairContainer.querySelector('#hud-reticle-svg');
+        this.targetLockLabelEl = crosshairContainer.querySelector('#hud-target-lock-label');
         this.hitMarkerEl = crosshairContainer.querySelector('#hud-hit-marker');
 
         // 3. Loading Overlay for High-Res Maps
@@ -395,7 +401,9 @@ export class HUD {
         notificationText: string,
         isMuted: boolean,
         hitMarkerTimer: number = 0,
-        hitMarkerText: string = ""
+        hitMarkerText: string = "",
+        targetFocus?: { distance: number; lockedEntity: any } | null,
+        isPointerLocked: boolean = false
     ): void {
         const groundSpeed = Math.sqrt(vel[0] * vel[0] + vel[2] * vel[2]);
         this.altEl.innerText = `ALT (AGL): ${sensors.altitudeAGL.toFixed(1)} m`;
@@ -421,6 +429,52 @@ export class HUD {
             this.notificationEl.style.opacity = '1';
         } else {
             this.notificationEl.style.opacity = '0';
+        }
+
+        // Pointer Lock status in controls hint bar
+        if (this.pointerStatusEl) {
+            if (isPointerLocked) {
+                this.pointerStatusEl.innerHTML = `<span style="color:#00ff88; animation:none;">[MOUSE AIM ACTIVE | ESC TO UNLOCK]</span>`;
+            } else {
+                this.pointerStatusEl.innerHTML = `<span style="color:#ffcc00; animation:pulse 2s infinite;">[CLICK TO LOCK AIM]</span>`;
+            }
+        }
+
+        // Precision Crosshair / Target Lock HUD
+        if (this.reticleSvgEl && this.targetLockLabelEl) {
+            if (targetFocus && targetFocus.lockedEntity) {
+                const ent = targetFocus.lockedEntity;
+                const entName = ent.name || ent.id || 'TARGET';
+                const distStr = `${targetFocus.distance.toFixed(0)}m`;
+                
+                // Color shift to neon red/crimson on lock
+                this.reticleSvgEl.querySelectorAll('circle, line').forEach(el => {
+                    (el as SVGElement).setAttribute('stroke', '#ff2244');
+                    if (el.tagName === 'circle' && el.getAttribute('fill') !== 'none') {
+                        (el as SVGElement).setAttribute('fill', '#ff2244');
+                    }
+                });
+                this.reticleSvgEl.style.transform = 'scale(1.22)';
+                this.targetLockLabelEl.innerHTML = `🎯 LOCKED: <span style="color:#ff3355;">${entName.toUpperCase()}</span> [${distStr}]`;
+                this.targetLockLabelEl.style.color = '#ff3355';
+                this.targetLockLabelEl.style.textShadow = '0 0 10px rgba(255, 34, 68, 0.9)';
+            } else {
+                // Idle or terrain targeting (cyan / soft green)
+                this.reticleSvgEl.querySelectorAll('circle, line').forEach(el => {
+                    (el as SVGElement).setAttribute('stroke', '#00ffcc');
+                    if (el.tagName === 'circle' && el.getAttribute('fill') !== 'none') {
+                        (el as SVGElement).setAttribute('fill', '#00ffcc');
+                    }
+                });
+                this.reticleSvgEl.style.transform = 'scale(1.0)';
+                if (targetFocus && targetFocus.distance < 300) {
+                    this.targetLockLabelEl.innerText = `RANGE: ${targetFocus.distance.toFixed(0)}m`;
+                    this.targetLockLabelEl.style.color = '#00ffcc';
+                    this.targetLockLabelEl.style.textShadow = '0 0 8px rgba(0, 255, 204, 0.7)';
+                } else {
+                    this.targetLockLabelEl.innerText = '';
+                }
+            }
         }
 
         // Hit marker

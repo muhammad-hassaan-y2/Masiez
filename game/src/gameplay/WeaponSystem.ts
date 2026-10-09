@@ -2,6 +2,7 @@ import { CollisionSystem } from './CollisionSystem';
 import { EntityManager, BaseEntity } from './EntityManager';
 import { SoundManager } from './SoundManager';
 import { MissionManager } from './MissionManager';
+import { Camera } from '../scene/Camera';
 
 export interface Projectile {
     pos: [number, number, number];
@@ -19,23 +20,108 @@ export interface ImpactParticle {
     color: [number, number, number, number];
 }
 
+export interface FocusTargetResult {
+    targetPoint: [number, number, number];
+    distance: number;
+    lockedEntity: BaseEntity | null;
+}
+
 export class WeaponSystem {
     public projectiles: Projectile[] = [];
     public particles: ImpactParticle[] = [];
 
     private lastShotTime: number = 0;
     private fireCooldownSec: number = 0.16; // rapid fire laser (up to 6 shots/sec)
-    private barrelToggle: boolean = false;
 
     public hitMarkerTimer: number = 0;
     public hitMarkerText: string = "";
 
     constructor() {}
 
+    /**
+     * Casts aim focus ray from camera through screen center crosshair/pointer into 3D world
+     */
+    public getFocusTarget(
+        camera: Camera,
+        collisionSystem: CollisionSystem,
+        entityManager: EntityManager
+    ): FocusTargetResult {
+        const camPos = camera.position;
+        const camFwd = camera.getForwardVector();
+        const maxRange = 350.0;
+        const rayEnd: [number, number, number] = [
+            camPos[0] + camFwd[0] * maxRange,
+            camPos[1] + camFwd[1] * maxRange,
+            camPos[2] + camFwd[2] * maxRange
+        ];
+
+        let targetFocusPoint: [number, number, number] = rayEnd;
+        let bestDist = maxRange;
+        let lockedTarget: BaseEntity | null = null;
+
+        // 1. Check for Entity Focus Lock (Target Drones, Rovers, Pedestrians)
+        // With smart aim assist: ray to entity distance within 1.5x entity radius or ~4° cone
+        for (const ent of entityManager.entities) {
+            if (!ent.isAlive) continue;
+            const toEnt = [
+                ent.pos[0] - camPos[0],
+                (ent.pos[1] + ent.height * 0.5) - camPos[1],
+                ent.pos[2] - camPos[2]
+            ];
+            const dot = toEnt[0] * camFwd[0] + toEnt[1] * camFwd[1] + toEnt[2] * camFwd[2];
+            if (dot > 2.0 && dot < bestDist) {
+                const perpDist = Math.hypot(
+                    toEnt[0] - camFwd[0] * dot,
+                    toEnt[1] - camFwd[1] * dot,
+                    toEnt[2] - camFwd[2] * dot
+                );
+                // Smart lock-on cone (1.4x entity radius or subtle angular cone)
+                const tolerance = Math.max(ent.radius * 1.4, dot * 0.045);
+                if (perpDist <= tolerance) {
+                    bestDist = dot;
+                    targetFocusPoint = [ent.pos[0], ent.pos[1] + ent.height * 0.5, ent.pos[2]];
+                    lockedTarget = ent;
+                }
+            }
+        }
+
+        // 2. If no entity targeted, check Building / Obstacle Colliders
+        if (!lockedTarget) {
+            const colHit = collisionSystem.raycast(camPos, rayEnd);
+            if (colHit && colHit.dist < bestDist) {
+                bestDist = colHit.dist;
+                targetFocusPoint = colHit.point;
+            }
+        }
+
+        // 3. If no building hit, check Ground Plane Intersection
+        if (!lockedTarget && bestDist >= maxRange && camFwd[1] < -0.01) {
+            const groundY = camera.currentGroundElevation;
+            const tGround = (groundY - camPos[1]) / camFwd[1];
+            if (tGround > 0 && tGround < maxRange) {
+                bestDist = tGround;
+                targetFocusPoint = [
+                    camPos[0] + camFwd[0] * tGround,
+                    groundY,
+                    camPos[2] + camFwd[2] * tGround
+                ];
+            }
+        }
+
+        return {
+            targetPoint: targetFocusPoint,
+            distance: bestDist,
+            lockedEntity: lockedTarget
+        };
+    }
+
     public fire(
         dronePos: [number, number, number],
         droneRotDeg: [number, number, number],
         droneVel: [number, number, number],
+        camera: Camera,
+        collisionSystem: CollisionSystem,
+        entityManager: EntityManager,
         soundManager: SoundManager,
         nowSec: number
     ): boolean {
@@ -44,58 +130,60 @@ export class WeaponSystem {
         }
         this.lastShotTime = nowSec;
 
+        // Obtain exact target focus point from the crosshair/pointer raycast
+        const focus = this.getFocusTarget(camera, collisionSystem, entityManager);
+        const targetPoint = focus.targetPoint;
+
         const rollRad = droneRotDeg[0] * (Math.PI / 180.0);
         const pitchRad = droneRotDeg[1] * (Math.PI / 180.0);
         const yawRad = droneRotDeg[2] * (Math.PI / 180.0);
 
-        // Compute forward aiming vector from drone pitch & yaw
         const cy = Math.cos(yawRad), sy = Math.sin(yawRad);
         const cp = Math.cos(pitchRad), sp = Math.sin(pitchRad);
         
-        // Forward vector in world space
-        const fwdX = sy * cp;
-        const fwdY = -sp;
-        const fwdZ = cy * cp;
+        // Drone right and forward vectors in world space
+        const rightX = cy, rightZ = -sy;
+        const fwdX = sy * cp, fwdY = -sp, fwdZ = cy * cp;
 
-        // Right vector in world space
-        const rightX = cy;
-        const rightY = 0;
-        const rightZ = -sy;
-
-        // Alternate or fire twin cannons
-        const sideOffset = (this.barrelToggle ? 0.38 : -0.38);
-        this.barrelToggle = !this.barrelToggle;
-
-        const muzzleX = dronePos[0] + fwdX * 0.45 + rightX * sideOffset;
-        const muzzleY = dronePos[1] + fwdY * 0.45 - 0.05;
-        const muzzleZ = dronePos[2] + fwdZ * 0.45 + rightZ * sideOffset;
-
-        // Laser projectile speed
-        const speed = 140.0;
-        const pVel: [number, number, number] = [
-            droneVel[0] * 0.3 + fwdX * speed,
-            droneVel[1] * 0.3 + fwdY * speed,
-            droneVel[2] * 0.3 + fwdZ * speed,
+        const sideOffset = 0.40;
+        const m1Pos: [number, number, number] = [
+            dronePos[0] + fwdX * 0.45 - rightX * sideOffset,
+            dronePos[1] + fwdY * 0.45 - 0.05,
+            dronePos[2] + fwdZ * 0.45 - rightZ * sideOffset
+        ];
+        const m2Pos: [number, number, number] = [
+            dronePos[0] + fwdX * 0.45 + rightX * sideOffset,
+            dronePos[1] + fwdY * 0.45 - 0.05,
+            dronePos[2] + fwdZ * 0.45 + rightZ * sideOffset
         ];
 
+        // Laser speed: 160 m/s
+        const speed = 160.0;
+
+        const computeVel = (muzzle: [number, number, number]): [number, number, number] => {
+            const dx = targetPoint[0] - muzzle[0];
+            const dy = targetPoint[1] - muzzle[1];
+            const dz = targetPoint[2] - muzzle[2];
+            const len = Math.hypot(dx, dy, dz) || 1.0;
+            return [
+                (dx / len) * speed + droneVel[0] * 0.2,
+                (dy / len) * speed + droneVel[1] * 0.2,
+                (dz / len) * speed + droneVel[2] * 0.2
+            ];
+        };
+
         this.projectiles.push({
-            pos: [muzzleX, muzzleY, muzzleZ],
-            prevPos: [muzzleX, muzzleY, muzzleZ],
-            vel: pVel,
+            pos: [m1Pos[0], m1Pos[1], m1Pos[2]],
+            prevPos: [m1Pos[0], m1Pos[1], m1Pos[2]],
+            vel: computeVel(m1Pos),
             life: 2.5,
-            color: [0.0, 1.0, 0.85, 1.0] // Glowing Cyan Plasma
+            color: [0.0, 1.0, 0.85, 1.0] // Neon Cyan Plasma
         });
 
-        // Fire second twin barrel simultaneously for devastating twin cannon firepower
-        const otherOffset = -sideOffset;
-        const m2X = dronePos[0] + fwdX * 0.45 + rightX * otherOffset;
-        const m2Y = dronePos[1] + fwdY * 0.45 - 0.05;
-        const m2Z = dronePos[2] + fwdZ * 0.45 + rightZ * otherOffset;
-
         this.projectiles.push({
-            pos: [m2X, m2Y, m2Z],
-            prevPos: [m2X, m2Y, m2Z],
-            vel: pVel,
+            pos: [m2Pos[0], m2Pos[1], m2Pos[2]],
+            prevPos: [m2Pos[0], m2Pos[1], m2Pos[2]],
+            vel: computeVel(m2Pos),
             life: 2.5,
             color: [0.0, 1.0, 0.85, 1.0]
         });

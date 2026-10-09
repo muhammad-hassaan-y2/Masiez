@@ -186,4 +186,12 @@ export class Camera {
         Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
         Mat4.invert(this.invViewProjMatrix, this.viewProjMatrix);
     }
+
+    public getForwardVector(): [number, number, number] {
+        const dx = this.target[0] - this.position[0];
+        const dy = this.target[1] - this.position[1];
+        const dz = this.target[2] - this.position[2];
+        const len = Math.hypot(dx, dy, dz) || 1.0;
+        return [dx / len, dy / len, dz / len];
+    }
 }

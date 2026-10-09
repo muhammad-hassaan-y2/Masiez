@@ -63,23 +63,41 @@ export class InputManager {
             this.keys[e.code] = false;
         });
 
-        // Mouse Drag Steering & Firing
+        // Mouse Pointer Lock & Drag Steering
         let lastX = 0;
         let lastY = 0;
         let mouseMovedDist = 0;
 
+        canvas.addEventListener('click', () => {
+            if (!this.isPointerLocked) {
+                try {
+                    canvas.requestPointerLock();
+                } catch (err) {}
+            }
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            this.isPointerLocked = (document.pointerLockElement === canvas);
+        });
+
         window.addEventListener('mousedown', (e) => {
-            if (e.target === canvas || (e.target as HTMLElement).tagName === 'CANVAS') {
+            const onCanvas = (e.target === canvas || (e.target as HTMLElement).tagName === 'CANVAS');
+            if (onCanvas) {
                 this.isMouseDown = true;
                 lastX = e.clientX;
                 lastY = e.clientY;
                 mouseMovedDist = 0;
+
+                // When pointer is locked, left click fires weapon INSTANTLY
+                if (this.isPointerLocked && (e.button === 0 || e.button === undefined)) {
+                    this.onShoot();
+                }
             }
         });
 
         window.addEventListener('mouseup', (e) => {
-            if (this.isMouseDown) {
-                // If the user tapped/clicked without dragging (< 6 pixels movement), fire weapon!
+            if (this.isMouseDown && !this.isPointerLocked) {
+                // When unlocked, quick tap without drag fires weapon
                 if (mouseMovedDist < 6 && (e.button === 0 || e.button === undefined)) {
                     this.onShoot();
                 }
@@ -90,11 +108,12 @@ export class InputManager {
         });
 
         window.addEventListener('mousemove', (e) => {
-            // STRICT USER REQUIREMENT:
-            // "mouse shoudl be like when user click it can change the direction
-            // likewise user click and move direction it can do that if its pressing w click and trying to move the directing"
-            // We rotate view and vehicle steering when user is clicking and dragging
-            if (this.isMouseDown) {
+            if (this.isPointerLocked) {
+                // Free, unbounded 360° mouse look when pointer locked
+                this.mouseDeltaX += e.movementX;
+                this.mouseDeltaY += e.movementY;
+            } else if (this.isMouseDown) {
+                // Drag-to-steer fallback when pointer is not locked
                 if (lastX !== 0 && lastY !== 0) {
                     const dx = e.clientX - lastX;
                     const dy = e.clientY - lastY;
