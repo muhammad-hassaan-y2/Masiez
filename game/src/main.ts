@@ -184,7 +184,8 @@ async function bootstrap() {
             collisionSystem,
             entityManager,
             soundManager,
-            performance.now() / 1000.0
+            performance.now() / 1000.0,
+            currentMapDef.id
         );
     };
 
@@ -303,17 +304,32 @@ async function bootstrap() {
         const zoom = input.consumeMouseZoom();
         camera.applyMouseDelta(mouse.dx, mouse.dy, zoom);
 
-        // A/D steering: Turn master flight heading smoothly
-        if (input.roll !== 0) {
-            camera.mouseOrbitYaw += input.roll * 0.035;
+        // Q / E: Smoothly turn flight heading & camera view left/right
+        if (input.yaw !== 0) {
+            camera.mouseOrbitYaw += input.yaw * 0.035;
+        }
+
+        // Auto-fire while fire button/key is held down
+        if (input.isShooting) {
+            weaponSystem.fire(
+                physics.getPosition(),
+                physics.getRotation(),
+                physics.getVelocity(),
+                camera,
+                collisionSystem,
+                entityManager,
+                soundManager,
+                now / 1000.0,
+                currentMapDef.id
+            );
         }
 
         // Apply Speed Mode multiplier to flight inputs
         const currentSpeedMode = speedModes[speedModeIndex];
         const speedMult = speedMultipliers[currentSpeedMode];
         const scaledPitch = input.pitch * speedMult;
-        // Bank into turns and strafe responsive to A/D
-        const scaledRoll = input.roll * 0.45 * speedMult;
+        // Clean strafe left/right responsive to A/D
+        const scaledRoll = input.roll * 0.50 * speedMult;
         const scaledThrottle = input.throttle > 0 ? input.throttle * Math.min(1.5, speedMult) : input.throttle;
 
         // Direct master heading (in degrees) from camera mouse orientation
@@ -373,7 +389,15 @@ async function bootstrap() {
         entityManager.update(deltaSec, pos);
 
         // 3. Update Drone Weapon System (Plasma Lasers & Explosive Impacts)
-        weaponSystem.update(deltaSec, collisionSystem, entityManager, missionManager, soundManager);
+        weaponSystem.update(
+            deltaSec,
+            collisionSystem,
+            entityManager,
+            missionManager,
+            soundManager,
+            currentMapDef.id,
+            currentMapDef.groundElevation
+        );
 
         const groundSpeed = Math.sqrt(vel[0]*vel[0] + vel[2]*vel[2]);
 
@@ -394,7 +418,7 @@ async function bootstrap() {
         camera.update(pos, rot[2], aspect, groundAtCam);
 
         // Aim Focus & Target Lock Calculation
-        const aimFocus = weaponSystem.getFocusTarget(camera, collisionSystem, entityManager);
+        const aimFocus = weaponSystem.getFocusTarget(camera, collisionSystem, entityManager, currentMapDef.id);
 
         // Update HUD
         hud.update(
@@ -517,8 +541,8 @@ async function bootstrap() {
         // 3. Draw Glowing Neon Race Checkpoints
         missionManager.render(renderPass, camera, timeSec);
 
-        // 4. Draw Drone 3D Custom Model
-        modelRenderer.render(renderPass, camera, pos, rot, 2.0, timeSec);
+        // 4. Draw Drone 3D Custom Model (with natural banking into strafes/turns)
+        modelRenderer.render(renderPass, camera, pos, [-rot[0], rot[1], rot[2]], 2.0, timeSec);
 
         // 5. Draw Combat Elements: Moving Persons, Patrol Rover, Target Drones, Lasers & Explosions
         combatRenderer.render(renderPass, camera, entityManager, weaponSystem, timeSec);

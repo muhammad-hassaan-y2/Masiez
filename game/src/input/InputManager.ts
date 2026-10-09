@@ -11,6 +11,7 @@ export class InputManager {
     public mouseDeltaY: number = 0;
     public isPointerLocked: boolean = false;
     public isMouseDown: boolean = false;
+    public isShooting: boolean = false;
     public mouseZoom: number = 0;
 
     public onArmToggle: () => void = () => {};
@@ -53,6 +54,7 @@ export class InputManager {
             } else if (e.code === 'Digit5') {
                 this.onMapSelectKey(4);
             } else if (e.code === 'KeyF' || e.code === 'KeyJ') {
+                this.isShooting = true;
                 this.onShoot();
             } else if (e.code === KEY_BINDINGS.emergencyStop) {
                 this.onEmergencyStop();
@@ -61,12 +63,16 @@ export class InputManager {
 
         window.addEventListener('keyup', (e) => {
             this.keys[e.code] = false;
+            if (e.code === 'KeyF' || e.code === 'KeyJ') {
+                if (!this.keys['KeyF'] && !this.keys['KeyJ'] && !this.isMouseDown) {
+                    this.isShooting = false;
+                }
+            }
         });
 
         // Mouse Pointer Lock & Drag Steering
         let lastX = 0;
         let lastY = 0;
-        let mouseMovedDist = 0;
 
         canvas.addEventListener('click', () => {
             if (!this.isPointerLocked) {
@@ -86,20 +92,23 @@ export class InputManager {
                 this.isMouseDown = true;
                 lastX = e.clientX;
                 lastY = e.clientY;
-                mouseMovedDist = 0;
 
-                // When pointer is locked, left click fires weapon INSTANTLY
-                if (this.isPointerLocked && (e.button === 0 || e.button === undefined)) {
+                if (e.button === 0 || e.button === undefined) {
+                    this.isShooting = true;
                     this.onShoot();
+                    if (!this.isPointerLocked) {
+                        try {
+                            canvas.requestPointerLock();
+                        } catch (err) {}
+                    }
                 }
             }
         });
 
         window.addEventListener('mouseup', (e) => {
-            if (this.isMouseDown && !this.isPointerLocked) {
-                // When unlocked, quick tap without drag fires weapon
-                if (mouseMovedDist < 6 && (e.button === 0 || e.button === undefined)) {
-                    this.onShoot();
+            if (e.button === 0 || e.button === undefined) {
+                if (!this.keys['KeyF'] && !this.keys['KeyJ']) {
+                    this.isShooting = false;
                 }
             }
             this.isMouseDown = false;
@@ -119,7 +128,6 @@ export class InputManager {
                     const dy = e.clientY - lastY;
                     this.mouseDeltaX += dx;
                     this.mouseDeltaY += dy;
-                    mouseMovedDist += Math.hypot(dx, dy);
                 }
                 lastX = e.clientX;
                 lastY = e.clientY;
@@ -131,6 +139,7 @@ export class InputManager {
 
         window.addEventListener('mouseleave', () => {
             this.isMouseDown = false;
+            this.isShooting = false;
             lastX = 0;
             lastY = 0;
         });

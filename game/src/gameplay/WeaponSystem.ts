@@ -44,7 +44,8 @@ export class WeaponSystem {
     public getFocusTarget(
         camera: Camera,
         collisionSystem: CollisionSystem,
-        entityManager: EntityManager
+        entityManager: EntityManager,
+        activeMapId: string = 'airfield'
     ): FocusTargetResult {
         const camPos = camera.position;
         const camFwd = camera.getForwardVector();
@@ -94,17 +95,33 @@ export class WeaponSystem {
             }
         }
 
-        // 3. If no building hit, check Ground Plane Intersection
-        if (!lockedTarget && bestDist >= maxRange && camFwd[1] < -0.01) {
-            const groundY = camera.currentGroundElevation;
-            const tGround = (groundY - camPos[1]) / camFwd[1];
-            if (tGround > 0 && tGround < maxRange) {
-                bestDist = tGround;
-                targetFocusPoint = [
-                    camPos[0] + camFwd[0] * tGround,
-                    groundY,
-                    camPos[2] + camFwd[2] * tGround
-                ];
+        // 3. Ground / Terrain Elevation Raymarch intersection
+        if (!lockedTarget) {
+            let prevT = 0;
+            let prevDiff = camPos[1] - collisionSystem.getGroundHeight(activeMapId, camPos[0], camPos[2], camera.currentGroundElevation);
+            const stepDist = 3.5;
+            for (let t = stepDist; t <= Math.min(bestDist, maxRange); t += stepDist) {
+                const px = camPos[0] + camFwd[0] * t;
+                const py = camPos[1] + camFwd[1] * t;
+                const pz = camPos[2] + camFwd[2] * t;
+                const gY = collisionSystem.getGroundHeight(activeMapId, px, pz, camera.currentGroundElevation);
+                const diff = py - gY;
+                if (diff <= 0) {
+                    const span = (prevDiff - diff) || 1.0;
+                    const frac = Math.max(0, Math.min(1, prevDiff / span));
+                    const hitT = prevT + frac * (t - prevT);
+                    if (hitT < bestDist) {
+                        bestDist = hitT;
+                        targetFocusPoint = [
+                            camPos[0] + camFwd[0] * hitT,
+                            camPos[1] + camFwd[1] * hitT,
+                            camPos[2] + camFwd[2] * hitT
+                        ];
+                    }
+                    break;
+                }
+                prevT = t;
+                prevDiff = diff;
             }
         }
 
@@ -123,7 +140,8 @@ export class WeaponSystem {
         collisionSystem: CollisionSystem,
         entityManager: EntityManager,
         soundManager: SoundManager,
-        nowSec: number
+        nowSec: number,
+        activeMapId: string = 'airfield'
     ): boolean {
         if (nowSec - this.lastShotTime < this.fireCooldownSec) {
             return false;
@@ -131,7 +149,7 @@ export class WeaponSystem {
         this.lastShotTime = nowSec;
 
         // Obtain exact target focus point from the crosshair/pointer raycast
-        const focus = this.getFocusTarget(camera, collisionSystem, entityManager);
+        const focus = this.getFocusTarget(camera, collisionSystem, entityManager, activeMapId);
         const targetPoint = focus.targetPoint;
 
         const rollRad = droneRotDeg[0] * (Math.PI / 180.0);
@@ -157,18 +175,19 @@ export class WeaponSystem {
             dronePos[2] + fwdZ * 0.45 + rightZ * sideOffset
         ];
 
-        // Laser speed: 160 m/s
-        const speed = 160.0;
+        // Laser speed: 220 m/s for instant, crisp arcade response
+        const speed = 220.0;
 
         const computeVel = (muzzle: [number, number, number]): [number, number, number] => {
             const dx = targetPoint[0] - muzzle[0];
             const dy = targetPoint[1] - muzzle[1];
             const dz = targetPoint[2] - muzzle[2];
             const len = Math.hypot(dx, dy, dz) || 1.0;
+            // Pure laser vector directly to crosshair target without drift
             return [
-                (dx / len) * speed + droneVel[0] * 0.2,
-                (dy / len) * speed + droneVel[1] * 0.2,
-                (dz / len) * speed + droneVel[2] * 0.2
+                (dx / len) * speed,
+                (dy / len) * speed,
+                (dz / len) * speed
             ];
         };
 
@@ -199,7 +218,9 @@ export class WeaponSystem {
         collisionSystem: CollisionSystem,
         entityManager: EntityManager,
         missionManager: MissionManager,
-        soundManager: SoundManager
+        soundManager: SoundManager,
+        activeMapId: string = 'airfield',
+        groundElevation: number = 0.0
     ): void {
         if (this.hitMarkerTimer > 0) {
             this.hitMarkerTimer -= dt;
@@ -219,9 +240,10 @@ export class WeaponSystem {
             p.pos[1] += p.vel[1] * dt;
             p.pos[2] += p.vel[2] * dt;
 
-            // Check Ground Collision
-            if (p.pos[1] <= 0.0) {
-                p.pos[1] = 0.05;
+            // Check Ground Collision against true terrain height
+            const pGroundY = collisionSystem.getGroundHeight(activeMapId, p.pos[0], p.pos[2], groundElevation);
+            if (p.pos[1] <= pGroundY + 0.05) {
+                p.pos[1] = pGroundY + 0.05;
                 this.spawnImpactParticles(p.pos, [0, 1, 0], [0.95, 0.7, 0.2, 1.0], 8);
                 soundManager.playImpact();
                 this.projectiles.splice(i, 1);

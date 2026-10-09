@@ -342,9 +342,12 @@ export class EntityManager {
             const halfH = ent.height * 0.5;
             const centerY = ent.pos[1] + halfH;
             
-            // Check vertical segment
-            const midY = (p0[1] + p1[1]) * 0.5;
-            if (midY < ent.pos[1] || midY > ent.pos[1] + ent.height) {
+            // Check vertical bounds: does segment overlap entity height range?
+            const segMinY = Math.min(p0[1], p1[1]);
+            const segMaxY = Math.max(p0[1], p1[1]);
+            const entMinY = ent.pos[1];
+            const entMaxY = ent.pos[1] + ent.height;
+            if (segMaxY < entMinY || segMinY > entMaxY) {
                 continue;
             }
 
@@ -352,7 +355,20 @@ export class EntityManager {
             const dx = p1[0] - p0[0];
             const dz = p1[2] - p0[2];
             const segLen = Math.hypot(dx, dz);
-            if (segLen < 0.001) continue;
+            if (segLen < 0.001) {
+                // Stationary or vertical projectile: check point distance
+                const dCenter = Math.hypot(p0[0] - ent.pos[0], p0[2] - ent.pos[2]);
+                if (dCenter <= ent.radius * 1.35) {
+                    ent.health -= damage;
+                    if (ent.health <= 0) {
+                        ent.health = 0;
+                        ent.isAlive = false;
+                        ent.respawnTimer = ent.type === 'ROVER' ? 15.0 : 8.0;
+                    }
+                    return { hitEntity: ent, hitPoint: [ent.pos[0], (entMinY + entMaxY) * 0.5, ent.pos[2]] };
+                }
+                continue;
+            }
 
             const nx = dx / segLen;
             const nz = dz / segLen;
@@ -361,12 +377,17 @@ export class EntityManager {
             const vx = ent.pos[0] - p0[0];
             const vz = ent.pos[2] - p0[2];
 
-            // Projection onto ray
+            // Projection onto ray segment
             const proj = vx * nx + vz * nz;
-            if (proj >= 0 && proj <= segLen) {
-                const perpDist = Math.hypot(vx - proj * nx, vz - proj * nz);
-                if (perpDist <= ent.radius) {
-                    // Hit!
+            const clampedProj = Math.max(0, Math.min(segLen, proj));
+            const perpDist = Math.hypot(vx - clampedProj * nx, vz - clampedProj * nz);
+
+            // Generous hitbox tolerance for high-speed laser rounds
+            const hitTolerance = ent.radius * 1.35;
+            if (perpDist <= hitTolerance) {
+                const tNorm = segLen > 0 ? clampedProj / segLen : 0;
+                const hitY = p0[1] + (p1[1] - p0[1]) * tNorm;
+                if (hitY >= entMinY - 0.25 && hitY <= entMaxY + 0.25) {
                     ent.health -= damage;
                     if (ent.health <= 0) {
                         ent.health = 0;
@@ -375,9 +396,9 @@ export class EntityManager {
                     }
 
                     const hitPoint: [number, number, number] = [
-                        p0[0] + nx * proj,
-                        centerY,
-                        p0[2] + nz * proj
+                        p0[0] + nx * clampedProj,
+                        Math.max(entMinY, Math.min(entMaxY, hitY)),
+                        p0[2] + nz * clampedProj
                     ];
 
                     return { hitEntity: ent, hitPoint };

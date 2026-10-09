@@ -588,6 +588,77 @@ export class CollisionSystem {
             }
         }
 
+        // Ray vs Cylinders (Towers, Fuel Tanks, Pine Trees)
+        for (const cyl of this.cylinders) {
+            const cx = cyl.center[0];
+            const cz = cyl.center[1];
+            const r = cyl.radius;
+            const minY = cyl.minY;
+            const maxY = cyl.maxY;
+
+            // 1. Check side surface of vertical cylinder
+            const dx = p0[0] - cx;
+            const dz = p0[2] - cz;
+            const vxd = normDir[0];
+            const vzd = normDir[2];
+
+            const a = vxd * vxd + vzd * vzd;
+            if (a > 0.00001) {
+                const b = 2 * (dx * vxd + dz * vzd);
+                const c = dx * dx + dz * dz - r * r;
+                const disc = b * b - 4 * a * c;
+
+                if (disc >= 0) {
+                    const sqrtDisc = Math.sqrt(disc);
+                    const tSide1 = (-b - sqrtDisc) / (2 * a);
+                    const tSide2 = (-b + sqrtDisc) / (2 * a);
+
+                    for (const tCandidate of [tSide1, tSide2]) {
+                        if (tCandidate >= 0 && tCandidate <= maxDist) {
+                            const hitY = p0[1] + normDir[1] * tCandidate;
+                            if (hitY >= minY && hitY <= maxY) {
+                                if (!closestHit || tCandidate < closestHit.dist) {
+                                    const hitX = p0[0] + normDir[0] * tCandidate;
+                                    const hitZ = p0[2] + normDir[2] * tCandidate;
+                                    const normSide: [number, number, number] = [
+                                        (hitX - cx) / r,
+                                        0,
+                                        (hitZ - cz) / r
+                                    ];
+                                    closestHit = {
+                                        hit: true,
+                                        point: [hitX, hitY, hitZ],
+                                        normal: normSide,
+                                        dist: tCandidate
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Check top circular cap
+            if (Math.abs(normDir[1]) > 0.0001) {
+                const tCap = (maxY - p0[1]) / normDir[1];
+                if (tCap >= 0 && tCap <= maxDist) {
+                    const hitCapX = p0[0] + normDir[0] * tCap;
+                    const hitCapZ = p0[2] + normDir[2] * tCap;
+                    const distSq = (hitCapX - cx) * (hitCapX - cx) + (hitCapZ - cz) * (hitCapZ - cz);
+                    if (distSq <= r * r) {
+                        if (!closestHit || tCap < closestHit.dist) {
+                            closestHit = {
+                                hit: true,
+                                point: [hitCapX, maxY, hitCapZ],
+                                normal: [0, 1, 0],
+                                dist: tCap
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
         return closestHit;
     }
 }

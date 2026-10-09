@@ -269,9 +269,10 @@ export class HUD {
         `;
         controlsHint.innerHTML = `
             <span id="hud-pointer-status" style="color:#00ffcc; font-weight:bold;">[CLICK TO LOCK AIM]</span>
-            <span style="color:#ff3366;"><b>[LEFT-CLICK / F]</b> FIRE LASERS</span>
+            <span style="color:#ff3366;"><b>[LEFT-CLICK / F]</b> RAPID FIRE</span>
             <span style="color:#ffcc00;"><b>[W / S]</b> FORWARD / BACK</span>
-            <span style="color:#ff9999;"><b>[A / D]</b> STRAFE</span>
+            <span style="color:#ff9999;"><b>[A / D]</b> STRAFE L/R</span>
+            <span style="color:#33ffdd;"><b>[Q / E]</b> TURN HEADING</span>
             <span style="color:#33ff99;"><b>[HOLD SHIFT]</b> CLIMB</span>
             <span style="color:#ffaa66;"><b>[CTRL]</b> DESCEND / LAND</span>
             <span style="color:#66ccff;"><b>[R]</b> SPEED MODE</span>
