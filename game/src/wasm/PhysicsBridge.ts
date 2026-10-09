@@ -100,6 +100,14 @@ export class PhysicsBridge {
         this.module.setValue(4252, vz, 'float');
     }
 
+    public setRotation(roll: number, pitch: number, yaw: number): void {
+        if (!this.module) return;
+        // g_physics.rotation (roll, pitch, yaw in deg) is at byte offset 4256 in WASM memory
+        this.module.setValue(4256, roll, 'float');
+        this.module.setValue(4260, pitch, 'float');
+        this.module.setValue(4264, yaw, 'float');
+    }
+
     public isArmed(): boolean {
         if (!this.module) return false;
         return this.module._physics_is_armed() === 1;

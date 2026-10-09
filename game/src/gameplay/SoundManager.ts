@@ -137,7 +137,7 @@ export class SoundManager {
 
         // Wind Rush volume: increases with total airspeed
         const speedMagnitude = Math.sqrt(groundSpeed * groundSpeed + verticalSpeed * verticalSpeed);
-        const speedNorm = Math.min(1.0, speedMagnitude / 35.0);
+        const speedNorm = Math.min(1.0, speedMagnitude / 55.0);
         const windVol = speedNorm * 0.35;
         const windFreq = 250 + speedNorm * 800;
 

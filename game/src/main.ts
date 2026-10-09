@@ -78,14 +78,48 @@ async function bootstrap() {
     const input = new InputManager(canvas);
     const hud = new HUD();
 
-    // Flight Speed Modes
+    // Flight Speed Modes & Dynamic Performance Profiles
     const speedModes: SpeedMode[] = ['CRUISE', 'SPORT', 'TURBO'];
     let speedModeIndex = 0;
-    const speedMultipliers: Record<SpeedMode, number> = {
-        'CRUISE': 1.0,
-        'SPORT': 1.6,
-        'TURBO': 2.4,
+
+    interface SpeedProfile {
+        maxSpeed: number;       // Top horizontal speed (m/s)
+        climbSpeed: number;     // Vertical climb speed (m/s)
+        descentSpeed: number;   // Controlled descent speed (m/s)
+        accelRate: number;      // Acceleration sharpness (1/s)
+        brakeRate: number;      // Air brake deceleration sharpness (1/s)
+        maxTiltDeg: number;     // Visual banking and pitch tilt limit (degrees)
+    }
+
+    const speedProfiles: Record<SpeedMode, SpeedProfile> = {
+        'CRUISE': {
+            maxSpeed: 20.0,      // ~72 km/h: Smooth, stable, agile exploration & target aiming
+            climbSpeed: 8.5,     // Responsive vertical climb
+            descentSpeed: 6.0,   // Controlled descent
+            accelRate: 20.0,     // 0.25s snappy response
+            brakeRate: 16.0,     // Crisp stop without glide
+            maxTiltDeg: 22.0,    // Stable tilt
+        },
+        'SPORT': {
+            maxSpeed: 36.0,      // ~130 km/h: High-performance tactical fighter dogfighting
+            climbSpeed: 16.0,    // Rapid evasive climb
+            descentSpeed: 11.0,  // Fast dive descent
+            accelRate: 25.0,     // Punchy instant acceleration
+            brakeRate: 20.0,     // Instant air-brakes
+            maxTiltDeg: 32.0,    // Aggressive racing banking
+        },
+        'TURBO': {
+            maxSpeed: 55.0,      // ~198 km/h: Hypersonic dash across vast maps
+            climbSpeed: 26.0,    // Rocket-like vertical burst
+            descentSpeed: 16.0,  // High-speed descent
+            accelRate: 30.0,     // Hypersonic racer throttle
+            brakeRate: 24.0,     // Authoritative air-brakes
+            maxTiltDeg: 42.0,    // Extreme high-g racing tilt
+        },
     };
+
+    let currentRollDeg = 0;
+    let currentPitchDeg = 0;
 
     // Active Map Management: Start directly on Tactical Airfield Runway (Original First Map)
     let currentMapDef: MapDefinition = MAP_CATALOG[0];
@@ -324,19 +358,15 @@ async function bootstrap() {
             );
         }
 
-        // Apply Speed Mode multiplier to flight inputs
+        // Apply Speed Mode dynamic profile & performance controls
         const currentSpeedMode = speedModes[speedModeIndex];
-        const speedMult = speedMultipliers[currentSpeedMode];
-        const scaledPitch = input.pitch * speedMult;
-        // Clean strafe left/right responsive to A/D
-        const scaledRoll = input.roll * 0.50 * speedMult;
-        const scaledThrottle = input.throttle > 0 ? input.throttle * Math.min(1.5, speedMult) : input.throttle;
+        const profile = speedProfiles[currentSpeedMode];
 
         // Direct master heading (in degrees) from camera mouse orientation
         const masterHeadingDeg = camera.mouseOrbitYaw * (180.0 / Math.PI);
-        physics.setManualInput(scaledThrottle, scaledPitch, scaledRoll, masterHeadingDeg);
+        physics.setManualInput(input.throttle, input.pitch, input.roll, masterHeadingDeg);
 
-        // Fixed-timestep C++ simulation steps (250Hz sub-stepping with continuous collision & ground clamp)
+        // Fixed-timestep C++ simulation steps (250Hz sub-stepping with high-agility movement, continuous collision & ground clamp)
         physicsAccumulator += deltaSec;
         let anyCollisionHit = false;
 
@@ -347,6 +377,74 @@ async function bootstrap() {
 
             const subPos = physics.getPosition();
             const subVel = physics.getVelocity();
+
+            // When armed and in MANUAL flight mode: apply responsive flight dynamics assist
+            if (physics.isArmed() && physics.getMode() === 'MANUAL') {
+                const masterYawRad = camera.mouseOrbitYaw;
+                const fwdX = Math.sin(masterYawRad);
+                const fwdZ = Math.cos(masterYawRad);
+                const rgtX = Math.cos(masterYawRad);
+                const rgtZ = -Math.sin(masterYawRad);
+
+                // Equal authority for forward/back (pitch) and strafe left/right (roll)
+                let inP = input.pitch;
+                let inR = input.roll;
+                const inputMag = Math.hypot(inP, inR);
+                if (inputMag > 1.0) {
+                    inP /= inputMag;
+                    inR /= inputMag;
+                }
+
+                // 1. Horizontal Flight (WASD + Speed Mode Scaling)
+                if (inputMag > 0.02) {
+                    const targetVx = (fwdX * inP + rgtX * inR) * profile.maxSpeed;
+                    const targetVz = (fwdZ * inP + rgtZ * inR) * profile.maxSpeed;
+                    const blendH = Math.min(1.0, physicsDt * profile.accelRate);
+                    subVel[0] += (targetVx - subVel[0]) * blendH;
+                    subVel[2] += (targetVz - subVel[2]) * blendH;
+                } else {
+                    // Crisp Air-Brakes: halts horizontal drift smoothly and instantly
+                    const blendBrake = Math.min(1.0, physicsDt * profile.brakeRate);
+                    subVel[0] += (0.0 - subVel[0]) * blendBrake;
+                    subVel[2] += (0.0 - subVel[2]) * blendBrake;
+                    if (Math.hypot(subVel[0], subVel[2]) < 0.10) {
+                        subVel[0] = 0;
+                        subVel[2] = 0;
+                    }
+                }
+
+                // 2. Vertical Flight (Shift / Space for climb, Ctrl / C for descent)
+                if (input.throttle > 0.05) {
+                    const targetVy = profile.climbSpeed * input.throttle;
+                    const blendClimb = Math.min(1.0, physicsDt * 18.0);
+                    subVel[1] += (targetVy - subVel[1]) * blendClimb;
+                } else if (input.throttle < -0.05) {
+                    const targetVy = -profile.descentSpeed * Math.abs(input.throttle);
+                    const blendDescend = Math.min(1.0, physicsDt * 18.0);
+                    subVel[1] += (targetVy - subVel[1]) * blendDescend;
+                } else {
+                    // Active Altitude Hold when vertical input is neutral
+                    const blendHover = Math.min(1.0, physicsDt * 14.0);
+                    subVel[1] += (0.0 - subVel[1]) * blendHover;
+                    if (Math.abs(subVel[1]) < 0.05) subVel[1] = 0;
+                }
+
+                // Integrate position accurately with enhanced subVel
+                subPos[0] = prevPos[0] + subVel[0] * physicsDt;
+                subPos[1] = prevPos[1] + subVel[1] * physicsDt;
+                subPos[2] = prevPos[2] + subVel[2] * physicsDt;
+
+                // 3. Dynamic Visual Banking & Pitch Tilt
+                const targetPitch = inP * profile.maxTiltDeg;
+                let targetRoll = inR * profile.maxTiltDeg;
+                if (input.yaw !== 0) {
+                    targetRoll += input.yaw * 10.0;
+                }
+                const blendTilt = Math.min(1.0, physicsDt * 22.0);
+                currentRollDeg += (targetRoll - currentRollDeg) * blendTilt;
+                currentPitchDeg += (targetPitch - currentPitchDeg) * blendTilt;
+                physics.setRotation(currentRollDeg, currentPitchDeg, masterHeadingDeg);
+            }
 
             // 1. Strict Ground Height Clamp on EVERY sub-step
             const groundY = collisionSystem.getGroundHeight(
@@ -359,17 +457,22 @@ async function bootstrap() {
             if (subPos[1] < minGroundY) {
                 subPos[1] = minGroundY;
                 if (subVel[1] < 0) subVel[1] = 0;
-                physics.setPosition(subPos[0], subPos[1], subPos[2]);
-                physics.setVelocity(subVel[0], subVel[1], subVel[2]);
+                // If landed on ground and neutral, stabilize upright
+                if (input.throttle <= 0 && Math.hypot(input.pitch, input.roll) <= 0.05) {
+                    currentRollDeg *= 0.85;
+                    currentPitchDeg *= 0.85;
+                    physics.setRotation(currentRollDeg, currentPitchDeg, masterHeadingDeg);
+                }
             }
 
             // 2. Strict Continuous Collision vs Buildings & Structures on EVERY sub-step
             const col = collisionSystem.resolveDroneCollision(subPos, subVel, 0.45, prevPos, groundY);
             if (col.hit) {
                 anyCollisionHit = true;
-                physics.setPosition(subPos[0], subPos[1], subPos[2]);
-                physics.setVelocity(subVel[0], subVel[1], subVel[2]);
             }
+
+            physics.setPosition(subPos[0], subPos[1], subPos[2]);
+            physics.setVelocity(subVel[0], subVel[1], subVel[2]);
         }
 
         if (anyCollisionHit) {
