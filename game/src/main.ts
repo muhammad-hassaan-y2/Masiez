@@ -97,6 +97,11 @@ async function bootstrap() {
     camera.currentGroundElevation = currentMapDef.groundElevation;
     physics.clearHeightmap();
 
+    // Initialize colliders & entities immediately for Map 1 (Tactical Airfield)
+    collisionSystem.clearColliders();
+    collisionSystem.initAirfieldColliders();
+    entityManager.initAirfieldEntities();
+
     // Stream map GLB if applicable
     if (currentMapDef.url) {
         cityMapRenderer.loadMap(currentMapDef).catch(e => console.warn(e));
@@ -111,10 +116,12 @@ async function bootstrap() {
                 .then(buf => {
                     const u16 = new Uint16Array(buf);
                     physics.loadHeightmap(u16, 256, 256, 20000.0, 800.0, 20000.0);
+                    collisionSystem.loadHeightmap(u16, 256, 256, 20000.0, 800.0, 20000.0, mapDef.groundElevation);
                 })
                 .catch(e => console.warn("Heightmap load skipped:", e));
         } else {
             physics.clearHeightmap();
+            collisionSystem.clearHeightmap();
         }
 
         if (mapDef.url) {
@@ -313,11 +320,44 @@ async function bootstrap() {
         const masterHeadingDeg = camera.mouseOrbitYaw * (180.0 / Math.PI);
         physics.setManualInput(scaledThrottle, scaledPitch, scaledRoll, masterHeadingDeg);
 
-        // Fixed-timestep C++ simulation steps
+        // Fixed-timestep C++ simulation steps (250Hz sub-stepping with continuous collision & ground clamp)
         physicsAccumulator += deltaSec;
+        let anyCollisionHit = false;
+
         while (physicsAccumulator >= physicsDt) {
+            const prevPos = physics.getPosition();
             physics.step(physicsDt);
             physicsAccumulator -= physicsDt;
+
+            const subPos = physics.getPosition();
+            const subVel = physics.getVelocity();
+
+            // 1. Strict Ground Height Clamp on EVERY sub-step
+            const groundY = collisionSystem.getGroundHeight(
+                currentMapDef.id,
+                subPos[0],
+                subPos[2],
+                currentMapDef.groundElevation
+            );
+            const minGroundY = groundY + 0.28; // Drone landing clearance buffer
+            if (subPos[1] < minGroundY) {
+                subPos[1] = minGroundY;
+                if (subVel[1] < 0) subVel[1] = 0;
+                physics.setPosition(subPos[0], subPos[1], subPos[2]);
+                physics.setVelocity(subVel[0], subVel[1], subVel[2]);
+            }
+
+            // 2. Strict Continuous Collision vs Buildings & Structures on EVERY sub-step
+            const col = collisionSystem.resolveDroneCollision(subPos, subVel, 0.45, prevPos, groundY);
+            if (col.hit) {
+                anyCollisionHit = true;
+                physics.setPosition(subPos[0], subPos[1], subPos[2]);
+                physics.setVelocity(subVel[0], subVel[1], subVel[2]);
+            }
+        }
+
+        if (anyCollisionHit) {
+            soundManager.playThud();
         }
 
         // Get updated physics state from WASM
@@ -328,14 +368,6 @@ async function bootstrap() {
         const sensors = physics.getSensors();
         const isArmed = physics.isArmed();
         const mode = physics.getMode();
-
-        // 1. Resolve Drone vs Buildings, Hangars, Control Tower, and Structures
-        const col = collisionSystem.resolveDroneCollision(pos, vel, 0.45);
-        if (col.hit) {
-            soundManager.playThud();
-            physics.setPosition(pos[0], pos[1], pos[2]);
-            physics.setVelocity(vel[0], vel[1], vel[2]);
-        }
 
         // 2. Update Moving Entities (Airport Ground Crew, Patrol Rover, Target Drones)
         entityManager.update(deltaSec, pos);
@@ -351,9 +383,15 @@ async function bootstrap() {
         // Update Sound Synthesizer
         soundManager.update(isArmed, motorRPMs, groundSpeed, vel[1]);
 
-        // Update Camera
+        // Update Camera (strictly clamped above local terrain/ground elevation)
         const aspect = canvas.width / canvas.height;
-        camera.update(pos, rot[2], aspect);
+        const groundAtCam = collisionSystem.getGroundHeight(
+            currentMapDef.id,
+            camera.position[0],
+            camera.position[2],
+            currentMapDef.groundElevation
+        );
+        camera.update(pos, rot[2], aspect, groundAtCam);
 
         // Aim Focus & Target Lock Calculation
         const aimFocus = weaponSystem.getFocusTarget(camera, collisionSystem, entityManager);

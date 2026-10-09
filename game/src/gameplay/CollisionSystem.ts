@@ -169,26 +169,184 @@ export class CollisionSystem {
         });
     }
 
+    private erangelHeightData: Uint16Array | null = null;
+    private erangelWidth: number = 0;
+    private erangelHeight: number = 0;
+    private erangelScaleX: number = 20000.0;
+    private erangelScaleY: number = 800.0;
+    private erangelScaleZ: number = 20000.0;
+    private erangelGroundElevation: number = 19.3;
+
+    public loadHeightmap(
+        data: Uint16Array,
+        width: number,
+        height: number,
+        sx: number,
+        sy: number,
+        sz: number,
+        groundElevation: number = 19.3
+    ): void {
+        this.erangelHeightData = data;
+        this.erangelWidth = width;
+        this.erangelHeight = height;
+        this.erangelScaleX = sx;
+        this.erangelScaleY = sy;
+        this.erangelScaleZ = sz;
+        this.erangelGroundElevation = groundElevation;
+    }
+
+    public clearHeightmap(): void {
+        this.erangelHeightData = null;
+    }
+
+    /**
+     * Exact analytical terrain height matching shaders/terrain.wgsl for the Tactical Airfield.
+     */
+    public getAirfieldTerrainHeight(px: number, pz: number): number {
+        const distFromOrigin = Math.hypot(px, pz);
+        const airfieldBlend = Math.max(0.0, Math.min(1.0, (distFromOrigin - 40.0) / 50.0));
+        if (airfieldBlend <= 0.0) {
+            return 0.0;
+        }
+        const h1 = Math.sin(px * 0.012 + 0.4) * Math.cos(pz * 0.012 + 0.6) * 22.0;
+        const h2 = Math.sin(px * 0.024 + pz * 0.016) * 10.0;
+        const h3 = Math.sin(px * 0.005 - 1.0) * Math.cos(pz * 0.006 + 0.5) * 28.0;
+        const h4 = Math.sin(px * 0.05 + pz * 0.035) * 2.0;
+        const rawHeight = h1 + h2 + h3 + h4 + 14.0;
+        return Math.max(0.0, rawHeight * airfieldBlend);
+    }
+
+    /**
+     * Returns true ground elevation at (x, z) for any active map.
+     */
+    public getGroundHeight(mapId: string, x: number, z: number, defaultElev: number = 0.0): number {
+        if (mapId === 'airfield') {
+            return this.getAirfieldTerrainHeight(x, z);
+        }
+        if (mapId === 'erangel' && this.erangelHeightData && this.erangelWidth > 0 && this.erangelHeight > 0) {
+            const u = (x / this.erangelScaleX) + 0.5;
+            const v = (z / this.erangelScaleZ) + 0.5;
+            if (u >= 0.0 && u <= 1.0 && v >= 0.0 && v <= 1.0) {
+                const ix = Math.max(0, Math.min(this.erangelWidth - 1, Math.floor(u * (this.erangelWidth - 1))));
+                const iz = Math.max(0, Math.min(this.erangelHeight - 1, Math.floor(v * (this.erangelHeight - 1))));
+                const hNorm = this.erangelHeightData[iz * this.erangelWidth + ix] / 65535.0;
+                return hNorm * this.erangelScaleY + this.erangelGroundElevation;
+            }
+            return this.erangelGroundElevation;
+        }
+        return defaultElev;
+    }
+
     public addAABB(min: [number, number, number], max: [number, number, number], id: string = 'custom'): void {
         this.aabbs.push({ id, min, max });
     }
 
     /**
-     * Resolves collision between drone sphere and all structures.
-     * Pushes pos outside building and modifies vel with bounce & friction.
+     * Resolves continuous and discrete collision between drone sphere and all structures.
+     * Prevents high-speed tunneling through walls, prevents pushing underground, and enables rooftop landing.
      */
     public resolveDroneCollision(
         pos: [number, number, number],
         vel: [number, number, number],
-        radius: number = 0.45
+        radius: number = 0.45,
+        prevPos?: [number, number, number],
+        currentGroundY: number = 0.0
     ): { hit: boolean; normal: [number, number, number] | null; obstacleName?: string } {
         let hit = false;
         let lastNormal: [number, number, number] | null = null;
         let hitObstacleName: string | undefined = undefined;
 
-        // 1. Test AABBs
+        // 1. Test AABBs (Skyscrapers, Hangars, Buildings, Warehouses)
         for (const box of this.aabbs) {
-            // Find closest point on AABB to sphere center
+            const bMinX = box.min[0] - radius, bMaxX = box.max[0] + radius;
+            const bMinY = Math.max(currentGroundY, box.min[1] - radius), bMaxY = box.max[1] + radius;
+            const bMinZ = box.min[2] - radius, bMaxZ = box.max[2] + radius;
+
+            // A. Continuous Swept Line-Segment Check (Prevents high-speed tunneling through walls)
+            const prevWasOutside = prevPos && (
+                prevPos[0] < bMinX || prevPos[0] > bMaxX ||
+                prevPos[1] < bMinY || prevPos[1] > bMaxY ||
+                prevPos[2] < bMinZ || prevPos[2] > bMaxZ
+            );
+            if (prevWasOutside) {
+                const segMinX = Math.min(prevPos[0], pos[0]);
+                const segMaxX = Math.max(prevPos[0], pos[0]);
+                const segMinY = Math.min(prevPos[1], pos[1]);
+                const segMaxY = Math.max(prevPos[1], pos[1]);
+                const segMinZ = Math.min(prevPos[2], pos[2]);
+                const segMaxZ = Math.max(prevPos[2], pos[2]);
+
+                if (segMaxX >= bMinX && segMinX <= bMaxX &&
+                    segMaxY >= bMinY && segMinY <= bMaxY &&
+                    segMaxZ >= bMinZ && segMinZ <= bMaxZ) {
+
+                    const dxSeg = pos[0] - prevPos[0];
+                    const dySeg = pos[1] - prevPos[1];
+                    const dzSeg = pos[2] - prevPos[2];
+                    const segLen = Math.hypot(dxSeg, dySeg, dzSeg);
+
+                    if (segLen > 0.001) {
+                        let t0 = 0.0, t1 = 1.0;
+                        let hitNormal: [number, number, number] = [0, 0, 0];
+                        let sweptHit = true;
+
+                        const dims = [
+                            { d: dxSeg, min: bMinX, max: bMaxX, p: prevPos[0], nNeg: [-1, 0, 0], nPos: [1, 0, 0] },
+                            { d: dySeg, min: bMinY, max: bMaxY, p: prevPos[1], nNeg: [0, -1, 0], nPos: [0, 1, 0] },
+                            { d: dzSeg, min: bMinZ, max: bMaxZ, p: prevPos[2], nNeg: [0, 0, -1], nPos: [0, 0, 1] },
+                        ];
+
+                        for (let i = 0; i < 3; i++) {
+                            const { d, min, max, p, nNeg, nPos } = dims[i];
+                            if (Math.abs(d) < 1e-6) {
+                                if (p < min || p > max) { sweptHit = false; break; }
+                            } else {
+                                let tNear = (min - p) / d;
+                                let tFar = (max - p) / d;
+                                let enterNorm = nNeg;
+                                if (tNear > tFar) {
+                                    const tmp = tNear; tNear = tFar; tFar = tmp;
+                                    enterNorm = nPos;
+                                }
+                                if (tNear > t0) {
+                                    t0 = tNear;
+                                    hitNormal = enterNorm as [number, number, number];
+                                }
+                                if (tFar < t1) t1 = tFar;
+                                if (t0 > t1) { sweptHit = false; break; }
+                            }
+                        }
+
+                        if (sweptHit && t0 >= 0.0 && t0 <= 1.0) {
+                            hit = true;
+                            hitObstacleName = box.name;
+
+                            // Halt drone immediately at impact boundary
+                            const safeT = Math.max(0, t0 - 0.02);
+                            pos[0] = prevPos[0] + dxSeg * safeT;
+                            pos[1] = Math.max(currentGroundY + 0.28, prevPos[1] + dySeg * safeT);
+                            pos[2] = prevPos[2] + dzSeg * safeT;
+
+                            const vDotN = vel[0] * hitNormal[0] + vel[1] * hitNormal[1] + vel[2] * hitNormal[2];
+                            if (vDotN < 0) {
+                                const restitution = 0.35;
+                                vel[0] -= (1 + restitution) * vDotN * hitNormal[0];
+                                vel[1] -= (1 + restitution) * vDotN * hitNormal[1];
+                                vel[2] -= (1 + restitution) * vDotN * hitNormal[2];
+                                vel[0] *= 0.75;
+                                vel[2] *= 0.75;
+                            }
+                            if (hitNormal[1] > 0.5 && vel[1] < 0) {
+                                vel[1] = 0;
+                            }
+                            lastNormal = hitNormal;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // B. Discrete Sphere vs AABB Overlap
             const cx = Math.max(box.min[0], Math.min(pos[0], box.max[0]));
             const cy = Math.max(box.min[1], Math.min(pos[1], box.max[1]));
             const cz = Math.max(box.min[2], Math.min(pos[2], box.max[2]));
@@ -212,52 +370,122 @@ export class CollisionSystem {
                     nz = dz / dist;
                     overlap = radius - dist;
                 } else {
-                    // Sphere center is inside AABB: find minimum exit direction
+                    // Center inside AABB: find safest exit direction.
+                    // CRITICAL: Grounded buildings MUST NEVER push downward into the ground!
                     const dMinX = pos[0] - box.min[0];
                     const dMaxX = box.max[0] - pos[0];
-                    const dMinY = pos[1] - box.min[1];
                     const dMaxY = box.max[1] - pos[1];
                     const dMinZ = pos[2] - box.min[2];
                     const dMaxZ = box.max[2] - pos[2];
 
-                    const minD = Math.min(dMinX, dMaxX, dMinY, dMaxY, dMinZ, dMaxZ);
-                    if (minD === dMinX) { nx = -1; overlap = radius + dMinX; }
-                    else if (minD === dMaxX) { nx = 1; overlap = radius + dMaxX; }
-                    else if (minD === dMinY) { ny = -1; overlap = radius + dMinY; }
-                    else if (minD === dMaxY) { ny = 1; overlap = radius + dMaxY; }
-                    else if (minD === dMinZ) { nz = -1; overlap = radius + dMinZ; }
-                    else { nz = 1; overlap = radius + dMaxZ; }
+                    let bestDir = 'xNeg';
+                    let minD = dMinX;
+
+                    if (dMaxX < minD) { minD = dMaxX; bestDir = 'xPos'; }
+                    if (dMinZ < minD) { minD = dMinZ; bestDir = 'zNeg'; }
+                    if (dMaxZ < minD) { minD = dMaxZ; bestDir = 'zPos'; }
+                    if (dMaxY < minD) { minD = dMaxY; bestDir = 'yPos'; }
+
+                    // Only allow -Y exit if building is elevated well above ground
+                    const isElevatedOverpass = box.min[1] > currentGroundY + 2.5;
+                    if (isElevatedOverpass) {
+                        const dMinY = pos[1] - box.min[1];
+                        if (dMinY < minD) { minD = dMinY; bestDir = 'yNeg'; }
+                    }
+
+                    if (bestDir === 'xNeg') { nx = -1; overlap = radius + dMinX; }
+                    else if (bestDir === 'xPos') { nx = 1; overlap = radius + dMaxX; }
+                    else if (bestDir === 'zNeg') { nz = -1; overlap = radius + dMinZ; }
+                    else if (bestDir === 'zPos') { nz = 1; overlap = radius + dMaxZ; }
+                    else if (bestDir === 'yPos') { ny = 1; overlap = radius + dMaxY; }
+                    else if (bestDir === 'yNeg') { ny = -1; overlap = radius + (pos[1] - box.min[1]); }
                 }
 
-                // Push position out
+                // Push position firmly out of the building
                 pos[0] += nx * overlap;
                 pos[1] += ny * overlap;
                 pos[2] += nz * overlap;
 
-                // Adjust velocity
+                // Ensure pushed position never goes below ground
+                pos[1] = Math.max(currentGroundY + 0.28, pos[1]);
+
+                // Physics reflection & friction
                 const vDotN = vel[0] * nx + vel[1] * ny + vel[2] * nz;
                 if (vDotN < 0) {
-                    const restitution = 0.25; // mild bounce
+                    const restitution = 0.35;
                     vel[0] -= (1 + restitution) * vDotN * nx;
                     vel[1] -= (1 + restitution) * vDotN * ny;
                     vel[2] -= (1 + restitution) * vDotN * nz;
-
-                    // Friction
-                    vel[0] *= 0.8;
-                    vel[2] *= 0.8;
+                    vel[0] *= 0.75;
+                    vel[2] *= 0.75;
                 }
 
-                // If on top of roof, support landing
-                if (ny > 0.6) {
-                    vel[1] = Math.max(0, vel[1]);
+                // Rooftop landing support
+                if (ny > 0.5) {
+                    if (vel[1] < 0) vel[1] = 0;
                 }
 
                 lastNormal = [nx, ny, nz];
             }
         }
 
-        // 2. Test Cylinders
+        // 2. Test Cylinders (Control Tower, Fuel Tanks, Trees, Radar Masts)
         for (const cyl of this.cylinders) {
+            const minCylY = Math.max(currentGroundY, cyl.minY - radius);
+            const maxCylY = cyl.maxY + radius;
+            const totalR = cyl.radius + radius;
+
+            // A. Swept segment vs cylinder check (prevents high-speed tunneling through circular shafts)
+            const prevWasOutsideCyl = prevPos && (
+                Math.hypot(prevPos[0] - cyl.center[0], prevPos[2] - cyl.center[1]) >= totalR ||
+                prevPos[1] < minCylY || prevPos[1] > maxCylY
+            );
+            if (prevWasOutsideCyl) {
+                const segMinY = Math.min(prevPos[1], pos[1]);
+                const segMaxY = Math.max(prevPos[1], pos[1]);
+                if (segMaxY >= minCylY && segMinY <= maxCylY) {
+                    const dxSeg = pos[0] - prevPos[0];
+                    const dzSeg = pos[2] - prevPos[2];
+                    const segLenSq = dxSeg * dxSeg + dzSeg * dzSeg;
+
+                    if (segLenSq > 0.001) {
+                        const tClamped = Math.max(0, Math.min(1, ((cyl.center[0] - prevPos[0]) * dxSeg + (cyl.center[1] - prevPos[2]) * dzSeg) / segLenSq));
+                        const closestX = prevPos[0] + tClamped * dxSeg;
+                        const closestZ = prevPos[2] + tClamped * dzSeg;
+                        const distToCylSq = (closestX - cyl.center[0]) ** 2 + (closestZ - cyl.center[1]) ** 2;
+
+                        if (distToCylSq < totalR * totalR) {
+                            // Hit the cylinder along swept path
+                            hit = true;
+                            hitObstacleName = cyl.name;
+
+                            const dirX = closestX - cyl.center[0];
+                            const dirZ = closestZ - cyl.center[1];
+                            const dLen = Math.hypot(dirX, dirZ) || 1.0;
+                            const normX = dirX / dLen;
+                            const normZ = dirZ / dLen;
+
+                            // Place drone just outside cylinder
+                            pos[0] = cyl.center[0] + normX * (totalR + 0.05);
+                            pos[2] = cyl.center[1] + normZ * (totalR + 0.05);
+                            pos[1] = Math.max(currentGroundY + 0.28, prevPos[1] + (pos[1] - prevPos[1]) * tClamped);
+
+                            const vDotN = vel[0] * normX + vel[2] * normZ;
+                            if (vDotN < 0) {
+                                const restitution = 0.35;
+                                vel[0] -= (1 + restitution) * vDotN * normX;
+                                vel[2] -= (1 + restitution) * vDotN * normZ;
+                                vel[0] *= 0.75;
+                                vel[2] *= 0.75;
+                            }
+                            lastNormal = [normX, 0, normZ];
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // B. Discrete sphere vs cylinder
             if (pos[1] + radius < cyl.minY || pos[1] - radius > cyl.maxY) {
                 continue;
             }
@@ -265,13 +493,10 @@ export class CollisionSystem {
             const dx = pos[0] - cyl.center[0];
             const dz = pos[2] - cyl.center[1];
             const distXZ = Math.hypot(dx, dz);
-            const totalR = cyl.radius + radius;
 
             if (distXZ < totalR) {
-                // Check if hitting top/bottom cap vs side
-                const distToTop = Math.abs(pos[1] - (cyl.maxY + radius));
-                if (pos[1] >= cyl.maxY && distToTop < radius * 1.5) {
-                    // Rooftop of cylinder
+                // Check if landing on rooftop of cylinder
+                if (pos[1] >= cyl.maxY - 0.2) {
                     pos[1] = cyl.maxY + radius;
                     if (vel[1] < 0) vel[1] = 0;
                     hit = true;
@@ -280,25 +505,30 @@ export class CollisionSystem {
                     continue;
                 }
 
-                // Side collision
+                // Radial side collision
                 hit = true;
                 hitObstacleName = cyl.name;
-                const nx = distXZ > 0.001 ? dx / distXZ : 1;
-                const nz = distXZ > 0.001 ? dz / distXZ : 0;
+                const nx = distXZ > 0.001 ? dx / distXZ : (prevPos ? (prevPos[0] - cyl.center[0]) : 1);
+                const nz = distXZ > 0.001 ? dz / distXZ : (prevPos ? (prevPos[2] - cyl.center[1]) : 0);
+                const nLen = Math.hypot(nx, nz) || 1.0;
+                const normX = nx / nLen;
+                const normZ = nz / nLen;
                 const overlap = totalR - distXZ;
 
-                pos[0] += nx * overlap;
-                pos[2] += nz * overlap;
+                pos[0] += normX * overlap;
+                pos[2] += normZ * overlap;
+                pos[1] = Math.max(currentGroundY + 0.28, pos[1]);
 
-                const vDotN = vel[0] * nx + vel[2] * nz;
+                const vDotN = vel[0] * normX + vel[2] * normZ;
                 if (vDotN < 0) {
-                    vel[0] -= 1.25 * vDotN * nx;
-                    vel[2] -= 1.25 * vDotN * nz;
-                    vel[0] *= 0.8;
-                    vel[2] *= 0.8;
+                    const restitution = 0.35;
+                    vel[0] -= (1 + restitution) * vDotN * normX;
+                    vel[2] -= (1 + restitution) * vDotN * normZ;
+                    vel[0] *= 0.75;
+                    vel[2] *= 0.75;
                 }
 
-                lastNormal = [nx, 0, nz];
+                lastNormal = [normX, 0, normZ];
             }
         }
 

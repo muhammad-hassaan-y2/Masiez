@@ -577,11 +577,12 @@ export class CityMapRenderer {
                 const height = pMaxY - pMinY;
                 const sizeX = pMaxX - pMinX;
                 const sizeZ = pMaxZ - pMinZ;
-                if (height >= 1.8 && sizeX >= 1.2 && sizeZ >= 1.2 && sizeX <= 180.0 && sizeZ <= 180.0) {
+                const isGroundPlane = height < 1.0 && (sizeX > 250.0 || sizeZ > 250.0);
+                if (!isGroundPlane && height >= 1.5 && (sizeX >= 0.8 || sizeZ >= 0.8) && sizeX <= 500.0 && sizeZ <= 500.0) {
                     extractedColliders.push({
                         id: `${mapDef.id}_struct_${extractedColliders.length}`,
                         min: [pMinX - 0.2, pMinY, pMinZ - 0.2],
-                        max: [pMaxX + 0.2, pMaxY + 0.5, pMaxZ + 0.2],
+                        max: [pMaxX + 0.2, pMaxY + 0.4, pMaxZ + 0.2],
                         name: `${mapDef.name} Structure ${extractedColliders.length + 1}`
                     });
                 }

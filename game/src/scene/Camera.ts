@@ -149,7 +149,16 @@ export class Camera {
         this.baseDistance = Math.max(1.5, Math.min(8.0, this.baseDistance + zoomDelta));
     }
 
-    public update(dronePos: [number, number, number], droneYawDeg: number, aspect: number): void {
+    public update(
+        dronePos: [number, number, number],
+        droneYawDeg: number,
+        aspect: number,
+        groundElevationAtCam?: number
+    ): void {
+        const baseElev = groundElevationAtCam !== undefined
+            ? Math.max(this.currentGroundElevation, groundElevationAtCam)
+            : this.currentGroundElevation;
+
         if (this.mode === 'CHASE') {
             const distHoriz = this.baseDistance * Math.cos(this.mouseOrbitPitch);
             const distVert  = this.baseDistance * Math.sin(this.mouseOrbitPitch);
@@ -158,7 +167,7 @@ export class Camera {
             const targetX = dronePos[0] - Math.sin(this.mouseOrbitYaw) * distHoriz;
             const targetZ = dronePos[2] - Math.cos(this.mouseOrbitYaw) * distHoriz;
             // Strictly clamp targetY above ground level so the camera NEVER clips under terrain
-            const minAllowedY = this.currentGroundElevation + 0.50;
+            const minAllowedY = baseElev + 0.40;
             const targetY = Math.max(minAllowedY, dronePos[1] + distVert);
 
             // Zero-lag tracking: rigidly locked directly behind and centered on the drone
@@ -169,7 +178,7 @@ export class Camera {
 
             // Target locked strictly to drone center
             this.target[0] = dronePos[0];
-            this.target[1] = Math.max(this.currentGroundElevation + 0.25, dronePos[1] + 0.15);
+            this.target[1] = Math.max(baseElev + 0.20, dronePos[1] + 0.15);
             this.target[2] = dronePos[2];
         } else if (this.mode === 'FPV') {
             this.position[0] = dronePos[0];
