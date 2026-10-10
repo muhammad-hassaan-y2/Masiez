@@ -1,5 +1,11 @@
 node_modules
 **/node_modules
+.venv
+**/.venv
+__pycache__
+**/__pycache__
+.ipynb_checkpoints
+**/.ipynb_checkpoints
 .git
 .github
 *.log

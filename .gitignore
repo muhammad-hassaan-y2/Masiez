@@ -6,3 +6,6 @@ dist/
 .DS_Store
 *.png
 .trash
+.venv/
+__pycache__/
+.ipynb_checkpoints/
