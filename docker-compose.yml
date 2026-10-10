@@ -1,13 +1,44 @@
 services:
-  drone-sim:
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - game
+      - server
+    ports:
+      - "8443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  server:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: drone-autonomy-sim
+      target: server-deps
+    command: npm run dev
     ports:
-      - "5173:5173"
       - "3001:3001"
     environment:
-      - NODE_ENV=production
       - HTTP_PORT=3001
-    restart: unless-stopped
+    volumes:
+      - ./server:/workspace/server
+      - ./shared:/workspace/shared
+
+  game:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: game-deps
+    command: npm run dev
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+    volumes:
+      - ./game:/workspace/game
+      - ./shared:/workspace/shared
+
+volumes:
+  caddy_data:
+  caddy_config:
