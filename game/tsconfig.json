@@ -9,10 +9,6 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
     "types": ["@webgpu/types", "vite/client"],
-    "paths": {
-      "drone-autonomy-shared": ["../shared/src"],
-      "drone-autonomy-shared/*": ["../shared/src/*"]
-    }
   },
   "include": ["src/**/*", "../shared/src/**/*"]
 }

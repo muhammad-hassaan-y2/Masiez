@@ -55,6 +55,35 @@ All specs are framework-agnostic, human-readable, and serve as the source of tru
 └── tests/          # Test suites (TBD)
 ```
 
+## Development (Docker Compose)
+
+### 1. Map the local hostname
+
+Add to your hosts file:
+
+```
+127.0.0.1 game.local
+```
+
+### 2. Start and open
+
+```
+docker compose up --build
+```
+
+Browse to **https://game.local:8443** and accept the self-signed certificate on first visit.
+
+Caddy routes `/ws/*` and `/api/*` to the server (3001), everything else to the game client (5173).
+
+### Stop
+
+```
+docker compose down       # stop
+docker compose down -v    # also wipe Caddy certificates/state
+```
+
+Source directories are bind-mounted, so edits hot-reload; rebuild only after changing a `package.json`.
+
 ## License
 
 TBD

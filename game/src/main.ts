@@ -12,6 +12,7 @@ import { EntityManager } from './gameplay/EntityManager';
 import { WeaponSystem } from './gameplay/WeaponSystem';
 import { CombatRenderer } from './gpu/CombatRenderer';
 import { Camera } from './scene/Camera';
+import { CameraStreamer } from './camera/CameraStreamer';
 import { InputManager } from './input/InputManager';
 import { HUD } from './hud/HUD';
 import { Telemetry, DroneFlightState, FlightMode, GPSFixType, SensorStatus } from 'drone-autonomy-shared';
@@ -73,10 +74,11 @@ async function bootstrap() {
     const combatRenderer = new CombatRenderer(gpu);
     await combatRenderer.init();
 
-    // 5. Camera, Input, HUD
+    // 5. Camera, Input, HUD, Streamer
     const camera = new Camera();
     const input = new InputManager(canvas);
     const hud = new HUD();
+    const cameraStreamer = new CameraStreamer(canvas);
 
     // Flight Speed Modes & Dynamic Performance Profiles
     const speedModes: SpeedMode[] = ['CRUISE', 'SPORT', 'TURBO'];
@@ -311,13 +313,24 @@ async function bootstrap() {
         input.onLockTarget();
     };
 
+    input.onStreamToggle = () => {
+        const active = cameraStreamer.toggleStreaming();
+        missionManager.showNotification(active ? "CAM STREAM ACTIVATED (LIVE)" : "CAM STREAM PAUSED");
+    };
+
+    hud.onStreamToggle = () => {
+        input.onStreamToggle();
+    };
+
     // 5. Connect to Backend 1 (WebSocket)
     let ws: WebSocket | null = null;
     function connectWS() {
         try {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsHost = window.location.hostname || 'localhost';
-            const wsUrl = `${wsProtocol}//${wsHost}:3001/ws/game`;
+            const wsHost = window.location.port === '5173'
+                ? `${window.location.hostname || 'localhost'}:3001`
+                : (window.location.host || 'localhost:3001');
+            const wsUrl = `${wsProtocol}//${wsHost}/ws/game`;
             ws = new WebSocket(wsUrl);
             ws.onopen = () => console.log(`Connected to Backend 1 Game Server (${wsUrl})`);
             ws.onmessage = (e) => {
@@ -585,7 +598,8 @@ async function bootstrap() {
             weaponSystem.hitMarkerText,
             aimFocus,
             input.isPointerLocked,
-            camera
+            camera,
+            cameraStreamer.getMetrics()
         );
 
         // Send telemetry to server at 10Hz
@@ -695,6 +709,17 @@ async function bootstrap() {
 
         renderPass.end();
         gpu.device.queue.submit([commandEncoder.finish()]);
+
+        // Camera Frame Streaming to Backend 1 & AI Agents
+        cameraStreamer.update(
+            ws,
+            camera,
+            now,
+            pos,
+            rot,
+            groundSpeed,
+            sensors.altitudeAGL
+        );
 
         requestAnimationFrame(frame);
     }

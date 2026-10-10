@@ -1,0 +1,8 @@
+game.local {
+	tls internal
+
+	@backend path /ws/* /api/*
+	reverse_proxy @backend server:3001
+
+	reverse_proxy game:5173
+}

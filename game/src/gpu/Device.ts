@@ -74,6 +74,7 @@ export class GPUDeviceContext {
         this.context.configure({
             device: this.device,
             format: this.format,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
             alphaMode: 'opaque',
         });
 

@@ -13,7 +13,26 @@ export function createRoutes(telemetryStore: any, droneCommands: any, droneState
   });
 
   router.get('/drone/camera/snapshot', (req, res) => {
-    res.status(501).json({ error: 'Not implemented yet' });
+    const frame = telemetryStore.getLatestCameraFrame();
+    if (!frame) {
+      return res.status(404).json({ error: 'No camera frame received yet from drone' });
+    }
+
+    if (req.query.format === 'json') {
+      return res.json(frame);
+    }
+
+    let base64Data = frame.data || '';
+    if (base64Data.startsWith('data:')) {
+      base64Data = base64Data.split(',')[1] || '';
+    }
+
+    const imgBuffer = Buffer.from(base64Data, 'base64');
+    const contentType = frame.format === 'webp' ? 'image/webp' : 'image/jpeg';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Length', imgBuffer.length);
+    res.setHeader('X-Frame-Timestamp', frame.metadata?.timestamp || Date.now());
+    res.send(imgBuffer);
   });
 
   router.get('/drone/camera/depth', (req, res) => {

@@ -25,6 +25,7 @@ export class InputManager {
     public onScopeToggle: () => void = () => {};
     public onScopeGearChange: (forward: boolean) => void = () => {};
     public onLockTarget: () => void = () => {};
+    public onStreamToggle: () => void = () => {};
 
     public isScoped: boolean = false;
 
@@ -54,6 +55,8 @@ export class InputManager {
                 this.onScopeGearChange(true);
             } else if (e.code === 'KeyT') {
                 this.onLockTarget();
+            } else if (e.code === 'KeyK') {
+                this.onStreamToggle();
             } else if (e.code === 'Digit1') {
                 this.onMapSelectKey(0);
             } else if (e.code === 'Digit2') {

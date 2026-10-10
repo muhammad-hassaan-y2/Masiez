@@ -2,6 +2,7 @@ import { SensorOutput } from '../wasm/PhysicsBridge';
 import { MAP_CATALOG, MapDefinition } from '../gpu/CityMapRenderer';
 import { Camera } from '../scene/Camera';
 import { FocusTargetResult } from '../gameplay/WeaponSystem';
+import { CameraStreamMetrics } from '../camera/CameraStreamer';
 
 export class HUD {
     private container: HTMLElement;
@@ -27,6 +28,7 @@ export class HUD {
     private audioEl!: HTMLElement;
     private scopeGearEl!: HTMLElement;
     private lockStatusEl!: HTMLElement;
+    private streamStatusEl!: HTMLElement;
 
     // Precision Crosshair / Target Lock
     private reticleSvgEl!: SVGElement | null;
@@ -56,6 +58,7 @@ export class HUD {
     public onScopeToggle?: () => void;
     public onScopeGearToggle?: () => void;
     public onLockTargetToggle?: () => void;
+    public onStreamToggle?: () => void;
 
     constructor() {
         this.container = document.createElement('div');
@@ -251,6 +254,14 @@ export class HUD {
         `;
         this.lockStatusEl.onclick = () => this.onLockTargetToggle?.();
 
+        this.streamStatusEl = document.createElement('div');
+        this.streamStatusEl.style.cssText = `
+            color: #00ff88;
+            cursor: pointer;
+            padding: 2px 0;
+        `;
+        this.streamStatusEl.onclick = () => this.onStreamToggle?.();
+
         this.audioEl = document.createElement('div');
         this.audioEl.style.cssText = `
             color: #00ffcc;
@@ -266,6 +277,7 @@ export class HUD {
         rightPanel.appendChild(this.speedModeEl);
         rightPanel.appendChild(this.scopeGearEl);
         rightPanel.appendChild(this.lockStatusEl);
+        rightPanel.appendChild(this.streamStatusEl);
         rightPanel.appendChild(this.audioEl);
 
         topRow.appendChild(leftPanel);
@@ -299,6 +311,7 @@ export class HUD {
             <span style="color:#ff3366;"><b>[LEFT-CLICK / F]</b> FIRE LASER</span>
             <span style="color:#ff55cc;"><b>[RIGHT-CLICK / Z]</b> SCOPE GEAR</span>
             <span style="color:#ffcc00;"><b>[T / MMB]</b> LOCK TARGET</span>
+            <span style="color:#00ff88;"><b>[K]</b> CAM STREAM</span>
             <span style="color:#ffaa66;"><b>[W / S / A / D]</b> MOVE FLIGHT</span>
             <span style="color:#33ffdd;"><b>[Q / E]</b> TURN HEADING</span>
             <span style="color:#33ff99;"><b>[SHIFT]</b> CLIMB</span>
@@ -505,7 +518,8 @@ export class HUD {
         hitMarkerText: string = "",
         targetFocus?: FocusTargetResult | null,
         isPointerLocked: boolean = false,
-        camera?: Camera
+        camera?: Camera,
+        camMetrics?: CameraStreamMetrics
     ): void {
         const groundSpeed = Math.sqrt(vel[0] * vel[0] + vel[2] * vel[2]);
         this.altEl.innerText = `ALT (AGL): ${sensors.altitudeAGL.toFixed(1)} m`;
@@ -534,6 +548,15 @@ export class HUD {
             this.lockStatusEl.innerHTML = `[T] ACQUIRING: <b style="color:#ffcc00;">${targetFocus.candidateEntity.roleName}</b>`;
         } else {
             this.lockStatusEl.innerHTML = `[T] LOCK: <b>STANDBY</b>`;
+        }
+
+        // Camera Streaming Status
+        if (this.streamStatusEl) {
+            if (camMetrics?.isStreaming) {
+                this.streamStatusEl.innerHTML = `[K] STREAM: <b style="color:#00ff88;">● LIVE (${camMetrics.fps} FPS)</b>`;
+            } else {
+                this.streamStatusEl.innerHTML = `[K] STREAM: <b style="color:#888888;">○ PAUSED</b>`;
+            }
         }
 
         this.ringProgressEl.innerText = `RINGS: ${ringsPassed} / ${totalRings}`;
