@@ -76,6 +76,7 @@ async function bootstrap() {
 
     // 5. Camera, Input, HUD, Streamer
     const camera = new Camera();
+    camera.mode = 'FPV'; // Default to First Person Operator View
     const input = new InputManager(canvas);
     const hud = new HUD();
     const cameraStreamer = new CameraStreamer(canvas);
@@ -289,7 +290,9 @@ async function bootstrap() {
     };
 
     input.onCameraToggle = () => {
-        camera.mode = camera.mode === 'CHASE' ? 'FPV' : 'CHASE';
+        camera.mode = camera.mode === 'FPV' ? 'CHASE' : 'FPV';
+        soundManager.playTargetAcquired();
+        missionManager.showNotification(camera.mode === 'FPV' ? "VIEW: OPERATOR FPV (FIRST-PERSON)" : "VIEW: THIRD-PERSON CHASE");
         console.log(`Camera Mode: ${camera.mode}`);
     };
 
@@ -379,6 +382,10 @@ async function bootstrap() {
 
     hud.onRecoverDrone = () => {
         recoverDrone();
+    };
+
+    hud.onCameraToggle = () => {
+        input.onCameraToggle();
     };
 
     // 5. Connect to Backend 1 (WebSocket)
@@ -661,7 +668,7 @@ async function bootstrap() {
             camera.position[2],
             currentMapDef.groundElevation
         );
-        camera.update(pos, rot[2], aspect, groundAtCam);
+        camera.update(pos, rot[2], aspect, groundAtCam, rot[0]);
 
         // Aim Focus, Lock-On Tracking & Predictive Lead Intercept Calculation
         const aimFocus = weaponSystem.updateTargetLock(
@@ -791,8 +798,10 @@ async function bootstrap() {
             cityMapRenderer.render(renderPass, camera, timeSec);
         }
 
-        // 3. Draw Drone 3D Custom Model (with natural banking into strafes/turns)
-        modelRenderer.render(renderPass, camera, pos, [-rot[0], rot[1], rot[2]], 2.0, timeSec);
+        // 3. Draw Drone 3D Custom Model (only when in external CHASE mode)
+        if (camera.mode === 'CHASE') {
+            modelRenderer.render(renderPass, camera, pos, [-rot[0], rot[1], rot[2]], 2.0, timeSec);
+        }
 
         // 5. Draw Combat Elements: Moving Persons, Patrol Rover, Target Drones, Lasers & Explosions
         combatRenderer.render(renderPass, camera, entityManager, weaponSystem, timeSec);

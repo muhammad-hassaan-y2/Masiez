@@ -25,6 +25,18 @@ export class HUD {
     private crashDetailsEl!: HTMLElement;
     private crashRecoverBtn!: HTMLButtonElement;
 
+    // FPV Operator On-Screen Display (OSD)
+    private fpvOsdContainer!: HTMLElement;
+    private fpvPitchLadderEl!: SVGElement | null;
+    private fpvHeadingTapeEl!: HTMLElement | null;
+    private fpvAltLadderEl!: HTMLElement | null;
+    private fpvClimbRateEl!: HTMLElement | null;
+    private fpvSpdLadderEl!: HTMLElement | null;
+    private fpvSpdKmhEl!: HTMLElement | null;
+    private fpvRecTimerEl!: HTMLElement | null;
+    private fpvGimbalTiltEl!: HTMLElement | null;
+    private fpvGpsCoordsEl!: HTMLElement | null;
+
     // Map switcher & speed bar
     private mapToolbar!: HTMLElement;
     private mapButtons: Map<string, HTMLButtonElement> = new Map();
@@ -57,6 +69,7 @@ export class HUD {
 
     // Callbacks
     public onMapSelect?: (map: MapDefinition) => void;
+    public onCameraToggle?: () => void;
     public onSpeedModeToggle?: () => void;
     public onAudioToggle?: () => void;
     public onScopeToggle?: () => void;
@@ -234,6 +247,13 @@ export class HUD {
         this.batEl = document.createElement('div');
         this.gpsEl = document.createElement('div');
         this.modeEl = document.createElement('div');
+        this.modeEl.style.cssText = `
+            cursor: pointer;
+            color: #00ffcc;
+            padding: 2px 0;
+        `;
+        this.modeEl.title = "Click to toggle view (FPV / CHASE)";
+        this.modeEl.onclick = () => this.onCameraToggle?.();
         this.stateEl = document.createElement('div');
 
         this.speedModeEl = document.createElement('div');
@@ -318,6 +338,7 @@ export class HUD {
             <span style="color:#ff55cc;"><b>[RIGHT-CLICK / Z]</b> SCOPE GEAR</span>
             <span style="color:#ffcc00;"><b>[T / MMB]</b> LOCK TARGET</span>
             <span style="color:#00ff88;"><b>[K]</b> CAM STREAM</span>
+            <span style="color:#00ffff; cursor:pointer;" id="hud-cam-toggle"><b>[V]</b> FPV/CHASE</span>
             <span style="color:#ffaa66;"><b>[W / S / A / D]</b> MOVE FLIGHT</span>
             <span style="color:#33ffdd;"><b>[Q / E]</b> TURN HEADING</span>
             <span style="color:#33ff99;"><b>[SHIFT]</b> CLIMB</span>
@@ -325,6 +346,8 @@ export class HUD {
             <span style="color:#ff99bb;"><b>[R]</b> SPEED MODE</span>
         `;
         this.pointerStatusEl = controlsHint.querySelector('#hud-pointer-status');
+        const camToggleBtn = controlsHint.querySelector('#hud-cam-toggle') as HTMLElement;
+        if (camToggleBtn) camToggleBtn.onclick = () => this.onCameraToggle?.();
 
         // 3. Holographic Precision Reticle / Dynamic Lock Readout
         const crosshairContainer = document.createElement('div');
@@ -523,7 +546,124 @@ export class HUD {
         this.crashOverlayEl.appendChild(this.crashRecoverBtn);
         this.crashDetailsEl = this.crashOverlayEl.querySelector('#hud-crash-details') as HTMLElement;
 
+        // 8. Drone Operator First Person View (FPV) OSD Interface
+        this.fpvOsdContainer = document.createElement('div');
+        this.fpvOsdContainer.id = 'hud-fpv-osd';
+        this.fpvOsdContainer.style.cssText = `
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: block;
+            z-index: 15;
+            font-family: monospace, -apple-system, sans-serif;
+        `;
+        this.fpvOsdContainer.innerHTML = `
+            <!-- 4 Viewfinder Corner Brackets -->
+            <div style="position:absolute; top:18px; left:18px; width:40px; height:40px; border-top:2px solid rgba(0,255,204,0.7); border-left:2px solid rgba(0,255,204,0.7);"></div>
+            <div style="position:absolute; top:18px; right:18px; width:40px; height:40px; border-top:2px solid rgba(0,255,204,0.7); border-right:2px solid rgba(0,255,204,0.7);"></div>
+            <div style="position:absolute; bottom:66px; left:18px; width:40px; height:40px; border-bottom:2px solid rgba(0,255,204,0.7); border-left:2px solid rgba(0,255,204,0.7);"></div>
+            <div style="position:absolute; bottom:66px; right:18px; width:40px; height:40px; border-bottom:2px solid rgba(0,255,204,0.7); border-right:2px solid rgba(0,255,204,0.7);"></div>
+
+            <!-- Top Left Live Feed & Sensor Spec -->
+            <div style="position:absolute; top:78px; left:26px; font-size:12px; font-weight:700; color:#00ffcc; line-height:1.45; text-shadow:0 0 6px rgba(0,255,204,0.8);">
+                <div><span style="color:#ff3344; animation:pulse 1.2s infinite;">● REC</span> <span id="fpv-rec-timer">00:01:24</span> // 4K 60FPS</div>
+                <div style="color:#88ddff;">CAM SENSOR: ONBOARD GIMBAL FPV</div>
+            </div>
+
+            <!-- Top Right RF Link & Latency -->
+            <div style="position:absolute; top:78px; right:26px; text-align:right; font-size:12px; font-weight:700; color:#00ffcc; line-height:1.45; text-shadow:0 0 6px rgba(0,255,204,0.8);">
+                <div>RF LINK: <b style="color:#00ff88;">99% (5.8 GHz HD)</b></div>
+                <div style="color:#88ddff;">GCS LATENCY: <b>14ms</b> | CH: 1</div>
+            </div>
+
+            <!-- Top Center Sliding Compass Tape -->
+            <div style="position:absolute; top:78px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;">
+                <div id="fpv-heading-tape" style="background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.45); border-radius:12px; padding:3px 18px; font-size:13px; font-weight:800; color:#00ffcc; letter-spacing:2px; box-shadow:0 0 10px rgba(0,255,204,0.3);">
+                    [ 350 • N • 010 ]
+                </div>
+                <div style="width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid #00ffcc; margin-top:2px;"></div>
+            </div>
+
+            <!-- Central Artificial Horizon & Pitch Ladder -->
+            <div id="fpv-horizon-group" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:280px; height:280px; pointer-events:none;">
+                <svg width="280" height="280" viewBox="0 0 280 280" style="overflow:visible;">
+                    <!-- Fixed Center Aircraft Reference (Amber Boresight) -->
+                    <circle cx="140" cy="140" r="3" fill="#ffcc00" />
+                    <line x1="108" y1="140" x2="128" y2="140" stroke="#ffcc00" stroke-width="2.5" />
+                    <line x1="152" y1="140" x2="172" y2="140" stroke="#ffcc00" stroke-width="2.5" />
+                    <line x1="140" y1="128" x2="140" y2="136" stroke="#ffcc00" stroke-width="2" />
+
+                    <!-- Moving Pitch Ladder (Tilts with roll, moves vertically with pitch) -->
+                    <g id="fpv-pitch-ladder">
+                        <!-- +20 Deg -->
+                        <line x1="90" y1="60" x2="120" y2="60" stroke="#00ffcc" stroke-width="1.8" />
+                        <line x1="120" y1="60" x2="120" y2="68" stroke="#00ffcc" stroke-width="1.8" />
+                        <line x1="160" y1="60" x2="190" y2="60" stroke="#00ffcc" stroke-width="1.8" />
+                        <line x1="160" y1="60" x2="160" y2="68" stroke="#00ffcc" stroke-width="1.8" />
+                        <text x="74" y="64" fill="#00ffcc" font-size="10" font-weight="bold">+20</text>
+
+                        <!-- +10 Deg -->
+                        <line x1="100" y1="100" x2="124" y2="100" stroke="#00ffcc" stroke-width="1.8" />
+                        <line x1="124" y1="100" x2="124" y2="106" stroke="#00ffcc" stroke-width="1.8" />
+                        <line x1="156" y1="100" x2="180" y2="100" stroke="#00ffcc" stroke-width="1.8" />
+                        <line x1="156" y1="100" x2="156" y2="106" stroke="#00ffcc" stroke-width="1.8" />
+                        <text x="84" y="104" fill="#00ffcc" font-size="10" font-weight="bold">+10</text>
+
+                        <!-- 00 Deg Horizon Line -->
+                        <line x1="80" y1="140" x2="114" y2="140" stroke="#00ffcc" stroke-width="2" />
+                        <line x1="166" y1="140" x2="200" y2="140" stroke="#00ffcc" stroke-width="2" />
+
+                        <!-- -10 Deg -->
+                        <line x1="100" y1="180" x2="124" y2="180" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="6 3" />
+                        <line x1="124" y1="180" x2="124" y2="174" stroke="#00ffcc" stroke-width="1.8" />
+                        <line x1="156" y1="180" x2="180" y2="180" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="6 3" />
+                        <line x1="156" y1="180" x2="156" y2="174" stroke="#00ffcc" stroke-width="1.8" />
+                        <text x="84" y="184" fill="#00ffcc" font-size="10" font-weight="bold">-10</text>
+
+                        <!-- -20 Deg -->
+                        <line x1="90" y1="220" x2="120" y2="220" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="6 3" />
+                        <line x1="120" y1="220" x2="120" y2="212" stroke="#00ffcc" stroke-width="1.8" />
+                        <line x1="160" y1="220" x2="190" y2="220" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="6 3" />
+                        <line x1="160" y1="220" x2="160" y2="212" stroke="#00ffcc" stroke-width="1.8" />
+                        <text x="74" y="224" fill="#00ffcc" font-size="10" font-weight="bold">-20</text>
+                    </g>
+                </svg>
+            </div>
+
+            <!-- Left Instrument Tape: Altitude Ladder & Vertical Speed -->
+            <div style="position:absolute; left:26px; top:44%; transform:translateY(-50%); background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.35); border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); min-width:115px;">
+                <div style="font-size:10px; color:#88ddff; letter-spacing:1px; margin-bottom:2px;">ALTITUDE (AGL)</div>
+                <div id="fpv-alt-ladder" style="font-size:16px; font-weight:900; color:#00ff88;">0.0 m</div>
+                <div id="fpv-climb-rate" style="font-size:11px; color:#ffcc00; margin-top:2px;">▲ 0.0 m/s</div>
+            </div>
+
+            <!-- Right Instrument Tape: Airspeed Ladder -->
+            <div style="position:absolute; right:26px; top:44%; transform:translateY(-50%); background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.35); border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); min-width:115px; text-align:right;">
+                <div style="font-size:10px; color:#88ddff; letter-spacing:1px; margin-bottom:2px;">GROUND SPEED</div>
+                <div id="fpv-spd-ladder" style="font-size:16px; font-weight:900; color:#00ff88;">0.0 m/s</div>
+                <div id="fpv-spd-kmh" style="font-size:11px; color:#ffcc00; margin-top:2px;">0.0 km/h</div>
+            </div>
+
+            <!-- Bottom OSD Bar: Gimbal Pitch, GPS Coordinates & Mode -->
+            <div style="position:absolute; bottom:68px; left:50%; transform:translateX(-50%); display:flex; gap:18px; background:rgba(5,15,25,0.82); border:1px solid rgba(0,255,204,0.4); border-radius:14px; padding:6px 20px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); white-space:nowrap;">
+                <div id="fpv-gimbal-tilt" style="color:#ffcc00;">GIMBAL: 0°</div>
+                <div id="fpv-gps-coords" style="color:#88ddff;">GPS: 33.6000° N, 72.9000° E</div>
+                <div style="color:#00ff88;">OPERATOR FPV // [V] TOGGLE VIEW</div>
+            </div>
+        `;
+
+        this.fpvPitchLadderEl = this.fpvOsdContainer.querySelector('#fpv-pitch-ladder');
+        this.fpvHeadingTapeEl = this.fpvOsdContainer.querySelector('#fpv-heading-tape');
+        this.fpvAltLadderEl = this.fpvOsdContainer.querySelector('#fpv-alt-ladder');
+        this.fpvClimbRateEl = this.fpvOsdContainer.querySelector('#fpv-climb-rate');
+        this.fpvSpdLadderEl = this.fpvOsdContainer.querySelector('#fpv-spd-ladder');
+        this.fpvSpdKmhEl = this.fpvOsdContainer.querySelector('#fpv-spd-kmh');
+        this.fpvRecTimerEl = this.fpvOsdContainer.querySelector('#fpv-rec-timer');
+        this.fpvGimbalTiltEl = this.fpvOsdContainer.querySelector('#fpv-gimbal-tilt');
+        this.fpvGpsCoordsEl = this.fpvOsdContainer.querySelector('#fpv-gps-coords');
+
         this.container.appendChild(topRow);
+        this.container.appendChild(this.fpvOsdContainer);
         this.container.appendChild(controlsHint);
         this.container.appendChild(this.crashOverlayEl);
         this.container.appendChild(this.loadingOverlay);
@@ -751,6 +891,69 @@ export class HUD {
                 this.hitMarkerEl.style.opacity = '1';
             } else {
                 this.hitMarkerEl.style.opacity = '0';
+            }
+        }
+
+        // 9. Update Drone Operator First-Person View (FPV) OSD Interface
+        const isFpvMode = (camera?.mode === 'FPV');
+        if (this.fpvOsdContainer) {
+            this.fpvOsdContainer.style.display = isFpvMode ? 'block' : 'none';
+
+            if (isFpvMode) {
+                // Pitch Ladder & Horizon: tilts with roll (rot[0]), translates with pitch (rot[1])
+                if (this.fpvPitchLadderEl) {
+                    const ladderPitchY = Math.max(-90, Math.min(90, rot[1] * 2.8));
+                    const ladderRollDeg = -rot[0];
+                    this.fpvPitchLadderEl.setAttribute(
+                        'transform',
+                        `rotate(${ladderRollDeg}, 140, 140) translate(0, ${ladderPitchY})`
+                    );
+                }
+
+                // Top Compass Ribbon Tape
+                if (this.fpvHeadingTapeEl) {
+                    const hdg = ((rot[2] % 360 + 360) % 360);
+                    const cardinals = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+                    const cardIdx = Math.round(hdg / 45) % 8;
+                    const cardStr = cardinals[cardIdx];
+                    const leftHdg = ((hdg - 15 + 360) % 360).toFixed(0).padStart(3, '0');
+                    const rightHdg = ((hdg + 15) % 360).toFixed(0).padStart(3, '0');
+                    this.fpvHeadingTapeEl.innerText = `[ ${leftHdg}° • ${cardStr} ${hdg.toFixed(0)}° • ${rightHdg}° ]`;
+                }
+
+                // Left & Right Instrument Tapes
+                if (this.fpvAltLadderEl) {
+                    this.fpvAltLadderEl.innerText = `${sensors.altitudeAGL.toFixed(1)} m`;
+                }
+                if (this.fpvClimbRateEl) {
+                    const vy = vel[1];
+                    const sym = vy >= 0.05 ? '▲ +' : (vy <= -0.05 ? '▼ ' : '─ ');
+                    this.fpvClimbRateEl.innerText = `${sym}${Math.abs(vy).toFixed(1)} m/s`;
+                    this.fpvClimbRateEl.style.color = vy >= 0.05 ? '#00ff88' : (vy <= -0.05 ? '#ffaa00' : '#88ddff');
+                }
+                if (this.fpvSpdLadderEl) {
+                    this.fpvSpdLadderEl.innerText = `${groundSpeed.toFixed(1)} m/s`;
+                }
+                if (this.fpvSpdKmhEl) {
+                    this.fpvSpdKmhEl.innerText = `${(groundSpeed * 3.6).toFixed(0)} km/h`;
+                }
+
+                // Running Camera Recording Clock
+                if (this.fpvRecTimerEl) {
+                    const elapsedSec = Math.floor(performance.now() / 1000);
+                    const mm = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+                    const ss = String(elapsedSec % 60).padStart(2, '0');
+                    this.fpvRecTimerEl.innerText = `${mm}:${ss}`;
+                }
+
+                // Gimbal Pitch & GPS Coordinates
+                if (this.fpvGimbalTiltEl && camera) {
+                    const gimbalPitchDeg = -(camera.mouseOrbitPitch * (180 / Math.PI) - 16).toFixed(0);
+                    this.fpvGimbalTiltEl.innerText = `GIMBAL: ${gimbalPitchDeg}°`;
+                }
+                if (this.fpvGpsCoordsEl) {
+                    this.fpvGpsCoordsEl.innerText = `GPS: ${sensors.latitude.toFixed(4)}° N, ${sensors.longitude.toFixed(4)}° E`;
+                }
             }
         }
     }
