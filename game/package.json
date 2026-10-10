@@ -9,7 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "drone-autonomy-shared": "*"
+    "drone-autonomy-shared": "*",
+    "livekit-client": "^2.22.4"
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.74",

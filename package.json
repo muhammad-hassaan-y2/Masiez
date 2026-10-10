@@ -1,7 +1,11 @@
 {
   "name": "drone-autonomy",
   "private": true,
-  "workspaces": ["shared", "game", "server"],
+  "workspaces": [
+    "shared",
+    "game",
+    "server"
+  ],
   "scripts": {
     "dev:game": "npm run dev --workspace=game",
     "dev:server": "npm run dev --workspace=server",
@@ -9,6 +13,8 @@
     "build": "npm run build --workspace=shared && npm run build --workspace=game && npm run build --workspace=server"
   },
   "devDependencies": {
+    "@esbuild/win32-x64": "^0.28.2",
+    "@rollup/rollup-win32-x64-msvc": "^4.64.5",
     "concurrently": "^9.1.0",
     "typescript": "^5.6.0"
   }

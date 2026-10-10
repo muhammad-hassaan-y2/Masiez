@@ -3,6 +3,7 @@ import { MAP_CATALOG, MapDefinition } from '../gpu/CityMapRenderer';
 import { Camera } from '../scene/Camera';
 import { FocusTargetResult } from '../gameplay/WeaponSystem';
 import { CameraStreamMetrics } from '../camera/CameraStreamer';
+import { LiveKitMetrics, VisionDetection } from '../network/LiveKitRoboticsClient';
 
 export class HUD {
     private container: HTMLElement;
@@ -45,6 +46,11 @@ export class HUD {
     private scopeGearEl!: HTMLElement;
     private lockStatusEl!: HTMLElement;
     private streamStatusEl!: HTMLElement;
+    private livekitStatusEl!: HTMLElement;
+    private aiVisionOverlayEl!: HTMLElement;
+
+    // Callbacks
+    public onLiveKitToggle?: () => void;
 
     // Precision Crosshair / Target Lock
     private reticleSvgEl!: SVGElement | null;
@@ -288,6 +294,15 @@ export class HUD {
         `;
         this.streamStatusEl.onclick = () => this.onStreamToggle?.();
 
+        this.livekitStatusEl = document.createElement('div');
+        this.livekitStatusEl.style.cssText = `
+            color: #00e5ff;
+            cursor: pointer;
+            padding: 2px 0;
+            font-size: 13px;
+        `;
+        this.livekitStatusEl.onclick = () => this.onLiveKitToggle?.();
+
         this.audioEl = document.createElement('div');
         this.audioEl.style.cssText = `
             color: #00ffcc;
@@ -304,7 +319,20 @@ export class HUD {
         rightPanel.appendChild(this.scopeGearEl);
         rightPanel.appendChild(this.lockStatusEl);
         rightPanel.appendChild(this.streamStatusEl);
+        rightPanel.appendChild(this.livekitStatusEl);
         rightPanel.appendChild(this.audioEl);
+
+        // AI Computer Vision Object Detection Overlay
+        this.aiVisionOverlayEl = document.createElement('div');
+        this.aiVisionOverlayEl.id = 'hud-ai-vision-overlay';
+        this.aiVisionOverlayEl.style.cssText = `
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 10;
+        `;
+        this.container.appendChild(this.aiVisionOverlayEl);
 
         topRow.appendChild(leftPanel);
         topRow.appendChild(centerCol);
@@ -714,7 +742,9 @@ export class HUD {
         targetFocus?: FocusTargetResult | null,
         isPointerLocked: boolean = false,
         camera?: Camera,
-        camMetrics?: CameraStreamMetrics
+        camMetrics?: CameraStreamMetrics,
+        livekitMetrics?: LiveKitMetrics,
+        aiDetections?: { detections: VisionDetection[]; width: number; height: number }
     ): void {
         const groundSpeed = Math.sqrt(vel[0] * vel[0] + vel[2] * vel[2]);
         this.altEl.innerText = `ALT (AGL): ${sensors.altitudeAGL.toFixed(1)} m`;
@@ -762,6 +792,62 @@ export class HUD {
                 this.streamStatusEl.innerHTML = `[K] STREAM: <b style="color:#00ff88;">● LIVE (${camMetrics.fps} FPS)</b>`;
             } else {
                 this.streamStatusEl.innerHTML = `[K] STREAM: <b style="color:#888888;">○ PAUSED</b>`;
+            }
+        }
+
+        // LiveKit Robotics RTC Status
+        if (this.livekitStatusEl) {
+            if (livekitMetrics) {
+                if (livekitMetrics.status === 'streaming') {
+                    this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#00ff88;">● STREAMING [${livekitMetrics.room}]</b>`;
+                } else if (livekitMetrics.status === 'connected') {
+                    this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#00e5ff;">○ CONNECTED [${livekitMetrics.room}]</b>`;
+                } else if (livekitMetrics.status === 'connecting') {
+                    this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#ffcc00;">CONNECTING...</b>`;
+                } else if (livekitMetrics.status === 'error') {
+                    this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#ff4444;">ERROR / STANDBY</b>`;
+                } else {
+                    this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#888888;">STANDBY</b>`;
+                }
+            } else {
+                this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#888888;">STANDBY</b>`;
+            }
+        }
+
+        // Render AI Vision Detection Bounding Boxes from LiveKit DataChannel
+        if (this.aiVisionOverlayEl) {
+            if (aiDetections && aiDetections.detections && aiDetections.detections.length > 0) {
+                const screenW = window.innerWidth;
+                const screenH = window.innerHeight;
+                const srcW = aiDetections.width || 640;
+                const srcH = aiDetections.height || 360;
+                const scaleX = screenW / srcW;
+                const scaleY = screenH / srcH;
+
+                let html = '';
+                for (const det of aiDetections.detections) {
+                    const [bx, by, bw, bh] = det.bbox;
+                    const left = Math.round(bx * scaleX);
+                    const top = Math.round(by * scaleY);
+                    const width = Math.round(bw * scaleX);
+                    const height = Math.round(bh * scaleY);
+                    const confPct = Math.round(det.confidence * 100);
+
+                    html += `
+                        <div style="position:absolute; left:${left}px; top:${top}px; width:${width}px; height:${height}px; border:2px solid #00ff88; box-shadow:0 0 10px rgba(0,255,136,0.6); pointer-events:none;">
+                            <div style="position:absolute; top:-22px; left:-2px; background:rgba(0,30,15,0.85); color:#00ff88; font-size:11px; font-weight:800; padding:2px 6px; border:1px solid #00ff88; border-radius:3px; letter-spacing:0.5px; white-space:nowrap;">
+                                AI: ${det.label.toUpperCase()} [${confPct}%]
+                            </div>
+                            <div style="position:absolute; top:2px; left:2px; width:6px; height:6px; border-top:2px solid #00ffcc; border-left:2px solid #00ffcc;"></div>
+                            <div style="position:absolute; top:2px; right:2px; width:6px; height:6px; border-top:2px solid #00ffcc; border-right:2px solid #00ffcc;"></div>
+                            <div style="position:absolute; bottom:2px; left:2px; width:6px; height:6px; border-bottom:2px solid #00ffcc; border-left:2px solid #00ffcc;"></div>
+                            <div style="position:absolute; bottom:2px; right:2px; width:6px; height:6px; border-bottom:2px solid #00ffcc; border-right:2px solid #00ffcc;"></div>
+                        </div>
+                    `;
+                }
+                this.aiVisionOverlayEl.innerHTML = html;
+            } else {
+                this.aiVisionOverlayEl.innerHTML = '';
             }
         }
 

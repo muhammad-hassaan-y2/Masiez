@@ -1,7 +1,48 @@
 import { Router } from 'express';
+import { AccessToken } from 'livekit-server-sdk';
+import { CONFIG } from '../config';
 
 export function createRoutes(telemetryStore: any, droneCommands: any, droneState: any, geofence: any) {
   const router = Router();
+
+  // LiveKit Robotics Token Endpoint
+  const generateLiveKitToken = async (req: any, res: any) => {
+    try {
+      const room = (req.query.room || req.body?.room || CONFIG.livekitRoom) as string;
+      const identity = (req.query.identity || req.body?.identity || `participant-${Date.now().toString(36)}`) as string;
+      const canPublish = req.query.canPublish !== 'false' && req.body?.canPublish !== false;
+      const canSubscribe = req.query.canSubscribe !== 'false' && req.body?.canSubscribe !== false;
+      const canPublishData = req.query.canPublishData !== 'false' && req.body?.canPublishData !== false;
+
+      const at = new AccessToken(CONFIG.livekitApiKey, CONFIG.livekitApiSecret, {
+        identity,
+        ttl: '6h',
+      });
+      at.addGrant({
+        roomJoin: true,
+        room,
+        canPublish,
+        canSubscribe,
+        canPublishData,
+      });
+
+      const token = await at.toJwt();
+      res.json({
+        token,
+        url: CONFIG.livekitUrl,
+        room,
+        identity,
+      });
+    } catch (err: any) {
+      console.error('[LiveKit] Failed to generate token:', err);
+      res.status(500).json({ error: 'Failed to generate LiveKit token', details: err.message });
+    }
+  };
+
+  router.get('/livekit/token', generateLiveKitToken);
+  router.post('/livekit/token', generateLiveKitToken);
+  router.get('/drone/livekit/token', generateLiveKitToken);
+  router.post('/drone/livekit/token', generateLiveKitToken);
 
   router.get('/drone/telemetry', (req, res) => {
     res.json(telemetryStore.getLatest() || {});

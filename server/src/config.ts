@@ -9,5 +9,9 @@ export const CONFIG = {
   telemetryBufferSeconds: process.env.TELEMETRY_BUFFER_SECONDS ? parseInt(process.env.TELEMETRY_BUFFER_SECONDS) : 300,
   maxSessions: process.env.MAX_SESSIONS ? parseInt(process.env.MAX_SESSIONS) : 100,
   referenceLat: 33.6,
-  referenceLon: 72.9
+  referenceLon: 72.9,
+  livekitUrl: process.env.LIVEKIT_URL || 'ws://localhost:7880',
+  livekitApiKey: process.env.LIVEKIT_API_KEY || 'devkey',
+  livekitApiSecret: process.env.LIVEKIT_API_SECRET || 'devsecret_devsecret_devsecret_1234',
+  livekitRoom: process.env.LIVEKIT_ROOM || 'drone'
 };

@@ -13,6 +13,7 @@ import { WeaponSystem } from './gameplay/WeaponSystem';
 import { CombatRenderer } from './gpu/CombatRenderer';
 import { Camera } from './scene/Camera';
 import { CameraStreamer } from './camera/CameraStreamer';
+import { LiveKitRoboticsClient } from './network/LiveKitRoboticsClient';
 import { InputManager } from './input/InputManager';
 import { HUD } from './hud/HUD';
 import { Telemetry, DroneFlightState, FlightMode, GPSFixType, SensorStatus } from 'drone-autonomy-shared';
@@ -80,6 +81,7 @@ async function bootstrap() {
     const input = new InputManager(canvas);
     const hud = new HUD();
     const cameraStreamer = new CameraStreamer(canvas);
+    const livekit = new LiveKitRoboticsClient();
 
     // Flight Speed Modes & Dynamic Performance Profiles
     const speedModes: SpeedMode[] = ['CRUISE', 'SPORT', 'TURBO'];
@@ -388,7 +390,43 @@ async function bootstrap() {
         input.onCameraToggle();
     };
 
-    // 5. Connect to Backend 1 (WebSocket)
+    // 5. Connect to LiveKit Robotics SFU (WebRTC Video Streaming & Low-Latency Data Channels)
+    livekit.connect(canvas).then(ok => {
+        if (ok) {
+            missionManager.showNotification("LIVEKIT ROBOTICS: STREAMING FPV [WEBRTC]");
+        }
+    }).catch(err => {
+        console.warn("[LiveKit] Init notice:", err);
+    });
+
+    livekit.onRemoteCommand = (cmd: any) => {
+        console.log("[LiveKit Robotics Teleop] Received command:", cmd);
+        if (cmd.type === 'arm_and_takeoff') {
+            physics.arm(true);
+            physics.setMode('AUTOPILOT');
+            const p = physics.getPosition();
+            const alt = (cmd.params as any)?.altitude || 15;
+            physics.setAutopilotTarget(p[0], p[1] + alt, p[2]);
+        } else if (cmd.type === 'land') {
+            physics.setMode('AUTOPILOT');
+            const p = physics.getPosition();
+            physics.setAutopilotTarget(p[0], currentMapDef.groundElevation + 0.1, p[2]);
+        } else if (cmd.type === 'emergency_stop') {
+            physics.arm(false);
+        }
+    };
+
+    hud.onLiveKitToggle = () => {
+        if (livekit.status === 'streaming' || livekit.status === 'connected') {
+            livekit.disconnect();
+            missionManager.showNotification("LIVEKIT STREAM DISCONNECTED");
+        } else {
+            livekit.connect(canvas);
+            missionManager.showNotification("CONNECTING TO LIVEKIT...");
+        }
+    };
+
+    // 6. Connect to Backend 1 (WebSocket)
     let ws: WebSocket | null = null;
     function connectWS() {
         try {
@@ -699,73 +737,79 @@ async function bootstrap() {
             aimFocus,
             input.isPointerLocked,
             camera,
-            cameraStreamer.getMetrics()
+            cameraStreamer.getMetrics(),
+            livekit.getMetrics(),
+            livekit.getLatestDetections()
         );
 
-        // Send telemetry to server at 10Hz
+        // Send telemetry to server & LiveKit DataChannel at 10Hz
         if (now - lastTelemetrySend >= 100) {
             lastTelemetrySend = now;
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                const telemetry: Telemetry = {
-                    timestamp: Date.now(),
-                    state: isCrashed ? DroneFlightState.EMERGENCY_LANDING : (isArmed ? (sensors.altitudeAGL > 0.5 ? DroneFlightState.HOVERING : DroneFlightState.ARMED) : DroneFlightState.IDLE),
-                    flightMode: mode === 'MANUAL' ? FlightMode.MANUAL : FlightMode.AUTOPILOT,
-                    armed: isArmed && !isCrashed,
+            const telemetry: Telemetry = {
+                timestamp: Date.now(),
+                state: isCrashed ? DroneFlightState.EMERGENCY_LANDING : (isArmed ? (sensors.altitudeAGL > 0.5 ? DroneFlightState.HOVERING : DroneFlightState.ARMED) : DroneFlightState.IDLE),
+                flightMode: mode === 'MANUAL' ? FlightMode.MANUAL : FlightMode.AUTOPILOT,
+                armed: isArmed && !isCrashed,
+                position: {
+                    latitude: sensors.latitude,
+                    longitude: sensors.longitude,
+                    altitude_amsl: sensors.altitudeAMSL,
+                    altitude_agl: sensors.altitudeAGL,
+                },
+                attitude: {
+                    roll: rot[0],
+                    pitch: rot[1],
+                    yaw: rot[2],
+                    rollRate: sensors.gyro[0],
+                    pitchRate: sensors.gyro[1],
+                    yawRate: sensors.gyro[2],
+                },
+                groundSpeed: groundSpeed,
+                verticalSpeed: vel[1],
+                heading: ((rot[2] % 360) + 360) % 360,
+                battery: {
+                    voltage: 22.2 * (0.6 + 0.4 * (sensors.batteryPct / 100)),
+                    current: 5.0,
+                    percentage: sensors.batteryPct,
+                    remainingTime: 1200,
+                    cellCount: 4,
+                    temperature: 30,
+                },
+                gps: {
+                    fix: GPSFixType.FIX_3D,
+                    satellites: 12,
+                    hdop: 0.9,
+                    vdop: 1.1,
                     position: {
                         latitude: sensors.latitude,
                         longitude: sensors.longitude,
                         altitude_amsl: sensors.altitudeAMSL,
                         altitude_agl: sensors.altitudeAGL,
-                    },
-                    attitude: {
-                        roll: rot[0],
-                        pitch: rot[1],
-                        yaw: rot[2],
-                        rollRate: sensors.gyro[0],
-                        pitchRate: sensors.gyro[1],
-                        yawRate: sensors.gyro[2],
-                    },
-                    groundSpeed: groundSpeed,
-                    verticalSpeed: vel[1],
-                    heading: ((rot[2] % 360) + 360) % 360,
-                    battery: {
-                        voltage: 22.2 * (0.6 + 0.4 * (sensors.batteryPct / 100)),
-                        current: 5.0,
-                        percentage: sensors.batteryPct,
-                        remainingTime: 1200,
-                        cellCount: 4,
-                        temperature: 30,
-                    },
-                    gps: {
-                        fix: GPSFixType.FIX_3D,
-                        satellites: 12,
-                        hdop: 0.9,
-                        vdop: 1.1,
-                        position: {
-                            latitude: sensors.latitude,
-                            longitude: sensors.longitude,
-                            altitude_amsl: sensors.altitudeAMSL,
-                            altitude_agl: sensors.altitudeAGL,
-                        }
-                    },
-                    wind: { speed: 1.5, direction: 180 },
-                    sensors: {
-                        imu: SensorStatus.HEALTHY,
-                        compass: SensorStatus.HEALTHY,
-                        barometer: SensorStatus.HEALTHY,
-                        gps: SensorStatus.HEALTHY,
-                        rangefinder: SensorStatus.HEALTHY,
-                        cameraForward: SensorStatus.HEALTHY,
-                        cameraDown: SensorStatus.NOT_PRESENT,
-                    },
-                    rangefinderAlt: sensors.rangefinder,
-                };
+                    }
+                },
+                wind: { speed: 1.5, direction: 180 },
+                sensors: {
+                    imu: SensorStatus.HEALTHY,
+                    compass: SensorStatus.HEALTHY,
+                    barometer: SensorStatus.HEALTHY,
+                    gps: SensorStatus.HEALTHY,
+                    rangefinder: SensorStatus.HEALTHY,
+                    cameraForward: SensorStatus.HEALTHY,
+                    cameraDown: SensorStatus.NOT_PRESENT,
+                },
+                rangefinderAlt: sensors.rangefinder,
+            };
 
+            // 1. WebSocket Telemetry (Backend 1)
+            if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'game:telemetry',
                     telemetry,
                 }));
             }
+
+            // 2. LiveKit Robotics Data Channel (Sub-100ms Telemetry Transport)
+            livekit.publishTelemetry(telemetry);
         }
 
         // WebGPU Render Pass

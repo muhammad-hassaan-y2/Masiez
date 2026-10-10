@@ -24,6 +24,10 @@ services:
       - "3001:3001"
     environment:
       - HTTP_PORT=3001
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=devsecret_devsecret_devsecret_1234
+      - LIVEKIT_ROOM=drone
     volumes:
       - ./server:/workspace/server
       - ./shared:/workspace/shared
