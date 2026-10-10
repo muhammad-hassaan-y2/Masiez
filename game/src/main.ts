@@ -195,14 +195,17 @@ async function bootstrap() {
         hud.setActiveMapButton(mapDef.id);
 
         if (mapDef.id === 'erangel') {
-            fetch('/assets/maps/erangel_heightmap.bin')
-                .then(res => res.arrayBuffer())
-                .then(buf => {
+            try {
+                const res = await fetch('/assets/maps/erangel_heightmap.bin');
+                if (res.ok) {
+                    const buf = await res.arrayBuffer();
                     const u16 = new Uint16Array(buf);
                     physics.loadHeightmap(u16, 256, 256, 20000.0, 800.0, 20000.0);
                     collisionSystem.loadHeightmap(u16, 256, 256, 20000.0, 800.0, 20000.0, mapDef.groundElevation);
-                })
-                .catch(e => console.warn("Heightmap load skipped:", e));
+                }
+            } catch (e) {
+                console.warn("Heightmap load skipped:", e);
+            }
         } else {
             physics.clearHeightmap();
             collisionSystem.clearHeightmap();
@@ -230,11 +233,23 @@ async function bootstrap() {
         // Configure physics for new map
         physics.setGroundOffset(mapDef.groundElevation);
         physics.resetPosition(mapDef.spawnPos[0], mapDef.spawnPos[1], mapDef.spawnPos[2]);
+        physics.setVelocity(0, 0, 0);
+        physics.setRotation(0, 0, 0);
+        physics.arm(true);
+        physics.setMode('MANUAL');
+        isCrashed = false;
+        crashReason = "";
+        currentRollDeg = 0;
+        currentPitchDeg = 0;
+        camera.mouseOrbitYaw = 0;
+        camera.mouseOrbitPitch = 0;
         camera.baseDistance = mapDef.camDistance;
         camera.currentGroundElevation = mapDef.groundElevation;
 
         // Load new course
         missionManager.loadCourse(mapDef.id);
+        soundManager.playTargetAcquired();
+        missionManager.showNotification(`SECTOR DEPLOYED: ${mapDef.name.toUpperCase()}`);
 
         // Populate solid building colliders & moving entities for this map
         collisionSystem.clearColliders();

@@ -57,15 +57,15 @@ export class InputManager {
                 this.onLockTarget();
             } else if (e.code === 'KeyK') {
                 this.onStreamToggle();
-            } else if (e.code === 'Digit1') {
+            } else if (e.code === 'Digit1' || e.code === 'Numpad1' || e.key === '1') {
                 this.onMapSelectKey(0);
-            } else if (e.code === 'Digit2') {
+            } else if (e.code === 'Digit2' || e.code === 'Numpad2' || e.key === '2') {
                 this.onMapSelectKey(1);
-            } else if (e.code === 'Digit3') {
+            } else if (e.code === 'Digit3' || e.code === 'Numpad3' || e.key === '3') {
                 this.onMapSelectKey(2);
-            } else if (e.code === 'Digit4') {
+            } else if (e.code === 'Digit4' || e.code === 'Numpad4' || e.key === '4') {
                 this.onMapSelectKey(3);
-            } else if (e.code === 'Digit5') {
+            } else if (e.code === 'Digit5' || e.code === 'Numpad5' || e.key === '5') {
                 this.onMapSelectKey(4);
             } else if (e.code === 'KeyF' || e.code === 'KeyJ') {
                 this.isShooting = true;

@@ -114,6 +114,7 @@ export class HUD {
             justify-content: space-between;
             align-items: flex-start;
             pointer-events: none;
+            z-index: 100;
         `;
 
         // Top Left: Flight Telemetry
@@ -148,6 +149,8 @@ export class HUD {
             align-items: center;
             gap: 10px;
             pointer-events: auto;
+            position: relative;
+            z-index: 100;
         `;
 
         // Map Selection Toolbar
@@ -155,12 +158,15 @@ export class HUD {
         this.mapToolbar.style.cssText = `
             display: flex;
             gap: 8px;
-            background: rgba(8, 18, 28, 0.9);
+            background: rgba(8, 18, 28, 0.95);
             backdrop-filter: blur(12px);
             padding: 6px 12px;
             border-radius: 20px;
-            border: 1px solid rgba(0, 255, 204, 0.45);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+            border: 1px solid rgba(0, 255, 204, 0.55);
+            box-shadow: 0 4px 25px rgba(0,0,0,0.7);
+            pointer-events: auto;
+            position: relative;
+            z-index: 100;
         `;
 
         for (let i = 0; i < MAP_CATALOG.length; i++) {
@@ -172,18 +178,24 @@ export class HUD {
                 color: ${i === 0 ? '#fff' : '#00ffcc'};
                 border: 1px solid ${i === 0 ? '#00ffcc' : 'rgba(0, 255, 204, 0.25)'};
                 border-radius: 12px;
-                padding: 5px 12px;
+                padding: 6px 14px;
                 font-size: 12px;
                 font-weight: 700;
                 cursor: pointer;
                 transition: all 0.2s ease;
+                pointer-events: auto;
+                user-select: none;
             `;
-            btn.onclick = () => {
+            btn.onmousedown = (e) => {
+                e.stopPropagation();
+            };
+            btn.onclick = (e) => {
+                e.stopPropagation();
                 this.setActiveMapButton(mapDef.id);
                 this.onMapSelect?.(mapDef);
             };
             btn.onmouseenter = () => {
-                btn.style.background = 'rgba(0, 255, 204, 0.4)';
+                btn.style.background = 'rgba(0, 255, 204, 0.45)';
             };
             btn.onmouseleave = () => {
                 const isActive = this.mapButtons.get(mapDef.id)?.classList.contains('active');

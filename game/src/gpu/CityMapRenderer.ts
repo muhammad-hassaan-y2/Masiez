@@ -149,7 +149,7 @@ export class CityMapRenderer {
             },
             primitive: {
                 topology: 'triangle-list',
-                cullMode: 'back', // Cull backfaces so bottom/underside geometry never shows through ("flat no back")
+                cullMode: 'none',
             },
             depthStencil: {
                 format: this.ctx.depthFormat,
@@ -315,7 +315,7 @@ export class CityMapRenderer {
                     this.ctx.device.queue.copyExternalImageToTexture(
                         { source: bmp },
                         { texture: tex },
-                        [targetW, targetH]
+                        [targetW, targetH, 1]
                     );
                     return tex.createView();
                 } catch (e) {
