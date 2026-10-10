@@ -232,59 +232,20 @@ export class MissionManager {
     }
 
     public loadCourse(mapId: string): void {
-        const template = this.courses.get(mapId) || this.courses.get('airfield') || [];
-        this.activeCourse = template.map(r => ({ ...r, passed: false }));
+        this.activeCourse = [];
         this.currentRingIndex = 0;
         this.score = 0;
         this.ringsPassed = 0;
-        this.totalRings = this.activeCourse.length;
-        this.lapStartTime = performance.now();
-        this.currentLapTime = 0;
-        this.isCourseActive = true;
-        this.showNotification(`RACE COURSE LOADED: ${this.totalRings} RINGS!`);
+        this.totalRings = 0;
+        this.isCourseActive = false;
+        this.showNotification("AIRSPACE PATROL & RECON INITIALIZED");
     }
 
     public update(dronePos: [number, number, number], deltaSec: number): void {
-        if (!this.isCourseActive || this.activeCourse.length === 0) return;
-
         if (this.notificationTimer > 0) {
             this.notificationTimer -= deltaSec;
             if (this.notificationTimer <= 0) {
                 this.notificationText = "";
-            }
-        }
-
-        this.currentLapTime = (performance.now() - this.lapStartTime) / 1000.0;
-
-        // Check collision against current active ring
-        if (this.currentRingIndex < this.activeCourse.length) {
-            const targetRing = this.activeCourse[this.currentRingIndex];
-            const dist = Math.hypot(
-                dronePos[0] - targetRing.pos[0],
-                dronePos[1] - targetRing.pos[1],
-                dronePos[2] - targetRing.pos[2]
-            );
-
-            if (dist < targetRing.radius + 0.6) {
-                // Ring passed!
-                targetRing.passed = true;
-                this.ringsPassed++;
-                this.score += 150;
-                this.currentRingIndex++;
-
-                this.soundManager.playCheckpointChime();
-                this.showNotification(`RING ${this.ringsPassed}/${this.totalRings} PASSED! +150 PTS`);
-
-                // Check if all rings completed
-                if (this.currentRingIndex >= this.activeCourse.length) {
-                    this.soundManager.playLapCompleteChime();
-                    if (!this.bestLapTime || this.currentLapTime < this.bestLapTime) {
-                        this.bestLapTime = this.currentLapTime;
-                        this.showNotification(`COURSE COMPLETE! NEW RECORD: ${this.currentLapTime.toFixed(2)}s!`);
-                    } else {
-                        this.showNotification(`COURSE COMPLETE! TIME: ${this.currentLapTime.toFixed(2)}s`);
-                    }
-                }
             }
         }
     }

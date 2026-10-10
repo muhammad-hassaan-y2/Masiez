@@ -14,12 +14,16 @@ export class HUD {
     private modeEl!: HTMLElement;
     private stateEl!: HTMLElement;
 
-    // Mission & Racing HUD
-    private missionPanel!: HTMLElement;
-    private scoreEl!: HTMLElement;
-    private ringProgressEl!: HTMLElement;
-    private lapTimerEl!: HTMLElement;
+    // Tactical Operations & Airframe Status
+    private opsPanel!: HTMLElement;
+    private airframeStatusEl!: HTMLElement;
+    private missionDescEl!: HTMLElement;
     private notificationEl!: HTMLElement;
+
+    // Crash Alert Modal
+    private crashOverlayEl!: HTMLElement;
+    private crashDetailsEl!: HTMLElement;
+    private crashRecoverBtn!: HTMLButtonElement;
 
     // Map switcher & speed bar
     private mapToolbar!: HTMLElement;
@@ -59,6 +63,7 @@ export class HUD {
     public onScopeGearToggle?: () => void;
     public onLockTargetToggle?: () => void;
     public onStreamToggle?: () => void;
+    public onRecoverDrone?: () => void;
 
     constructor() {
         this.container = document.createElement('div');
@@ -169,27 +174,28 @@ export class HUD {
             this.mapToolbar.appendChild(btn);
         }
 
-        // Mission Progress Card
-        this.missionPanel = document.createElement('div');
-        this.missionPanel.style.cssText = `
-            background: rgba(12, 26, 40, 0.85);
-            backdrop-filter: blur(10px);
-            padding: 8px 18px;
+        // Tactical Airframe & Operations Card
+        this.opsPanel = document.createElement('div');
+        this.opsPanel.style.cssText = `
+            background: rgba(10, 22, 34, 0.88);
+            backdrop-filter: blur(12px);
+            padding: 8px 20px;
             border-radius: 14px;
-            border: 1px solid rgba(255, 204, 0, 0.5);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(0, 255, 204, 0.4);
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
             display: flex;
-            gap: 16px;
+            gap: 20px;
             font-size: 13px;
             font-weight: 700;
-            color: #ffcc00;
+            color: #00ffcc;
+            align-items: center;
         `;
-        this.ringProgressEl = document.createElement('div');
-        this.scoreEl = document.createElement('div');
-        this.lapTimerEl = document.createElement('div');
-        this.missionPanel.appendChild(this.ringProgressEl);
-        this.missionPanel.appendChild(this.scoreEl);
-        this.missionPanel.appendChild(this.lapTimerEl);
+        this.airframeStatusEl = document.createElement('div');
+        this.airframeStatusEl.innerHTML = `AIRFRAME: <b style="color:#00ff88;">● INTACT (100%)</b>`;
+        this.missionDescEl = document.createElement('div');
+        this.missionDescEl.innerHTML = `<span style="color:#88ddff;">MISSION:</span> TACTICAL RECON & AIRSPACE PATROL`;
+        this.opsPanel.appendChild(this.airframeStatusEl);
+        this.opsPanel.appendChild(this.missionDescEl);
 
         // Notification Banner
         this.notificationEl = document.createElement('div');
@@ -204,7 +210,7 @@ export class HUD {
         `;
 
         centerCol.appendChild(this.mapToolbar);
-        centerCol.appendChild(this.missionPanel);
+        centerCol.appendChild(this.opsPanel);
         centerCol.appendChild(this.notificationEl);
 
         // Top Right: Systems, Modes & Combat Targeting Panel
@@ -467,8 +473,59 @@ export class HUD {
         this.loadingOverlay.appendChild(this.loadingText);
         this.loadingOverlay.appendChild(barContainer);
 
+        // 7. Crash Alarm & Airframe Recovery Overlay
+        this.crashOverlayEl = document.createElement('div');
+        this.crashOverlayEl.id = 'hud-crash-overlay';
+        this.crashOverlayEl.style.cssText = `
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(140, 10, 20, 0.5) 0%, rgba(30, 5, 10, 0.9) 70%, rgba(5, 0, 0, 0.98) 100%);
+            box-shadow: inset 0 0 140px rgba(255, 30, 50, 0.85);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            z-index: 950;
+            pointer-events: auto;
+            backdrop-filter: blur(8px);
+        `;
+        this.crashOverlayEl.innerHTML = `
+            <div style="font-size: 34px; font-weight: 900; letter-spacing: 3px; color: #ff2244; text-shadow: 0 0 30px rgba(255, 34, 68, 0.95); text-align: center;">
+                ⚠️ AIRFRAME DESTROYED — DRONE CRASHED ⚠️
+            </div>
+            <div id="hud-crash-details" style="font-size: 17px; font-weight: 700; color: #ffcc00; letter-spacing: 1.5px; background: rgba(0,0,0,0.7); padding: 8px 24px; border-radius: 8px; border: 1px solid rgba(255, 204, 0, 0.5); text-align:center;">
+                COLLISION DETECTED
+            </div>
+            <div style="font-size: 14px; font-weight: 600; color: #bbbbbb; letter-spacing: 1px;">
+                MOTORS CUT • AIRFRAME BREACHED • AUTONOMY HALTED
+            </div>
+        `;
+        this.crashRecoverBtn = document.createElement('button');
+        this.crashRecoverBtn.innerText = `[SPACE] OR [R] RECOVER DRONE TO BASE`;
+        this.crashRecoverBtn.style.cssText = `
+            background: linear-gradient(135deg, #00ffcc, #00aa88);
+            color: #05141c;
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            padding: 12px 34px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 0 30px rgba(0, 255, 204, 0.7);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            margin-top: 10px;
+        `;
+        this.crashRecoverBtn.onmouseenter = () => { this.crashRecoverBtn.style.transform = 'scale(1.05)'; };
+        this.crashRecoverBtn.onmouseleave = () => { this.crashRecoverBtn.style.transform = 'scale(1.0)'; };
+        this.crashRecoverBtn.onclick = () => this.onRecoverDrone?.();
+        this.crashOverlayEl.appendChild(this.crashRecoverBtn);
+        this.crashDetailsEl = this.crashOverlayEl.querySelector('#hud-crash-details') as HTMLElement;
+
         this.container.appendChild(topRow);
         this.container.appendChild(controlsHint);
+        this.container.appendChild(this.crashOverlayEl);
         this.container.appendChild(this.loadingOverlay);
     }
 
@@ -508,12 +565,10 @@ export class HUD {
         flightMode: string,
         speedMode: string,
         camMode: string,
-        score: number,
-        ringsPassed: number,
-        totalRings: number,
-        lapTime: number,
         notificationText: string,
         isMuted: boolean,
+        isCrashed: boolean = false,
+        crashReason: string = "",
         hitMarkerTimer: number = 0,
         hitMarkerText: string = "",
         targetFocus?: FocusTargetResult | null,
@@ -529,7 +584,18 @@ export class HUD {
         this.batEl.innerText = `BAT: ${sensors.batteryPct.toFixed(0)}%`;
         this.gpsEl.innerText = `GPS: 3D FIX (12 sats)`;
         this.modeEl.innerText = `FC: ${flightMode} | [V] ${camMode}`;
-        this.stateEl.innerHTML = `STATE: <span style="color:${armed ? '#00ff66' : '#ff3333'}; font-weight: bold;">${armed ? '● ARMED' : '○ DISARMED'}</span>`;
+
+        if (isCrashed) {
+            this.stateEl.innerHTML = `STATE: <span style="color:#ff2244; font-weight: bold;">● CRASHED</span>`;
+            this.airframeStatusEl.innerHTML = `AIRFRAME: <b style="color:#ff2244;">✖ DESTROYED</b>`;
+            this.crashOverlayEl.style.display = 'flex';
+            this.crashDetailsEl.innerText = crashReason ? `COLLISION: ${crashReason.toUpperCase()}` : 'COLLISION WITH TERRAIN / STRUCTURE';
+        } else {
+            this.stateEl.innerHTML = `STATE: <span style="color:${armed ? '#00ff66' : '#ff3333'}; font-weight: bold;">${armed ? '● ARMED' : '○ DISARMED'}</span>`;
+            this.airframeStatusEl.innerHTML = `AIRFRAME: <b style="color:#00ff88;">● INTACT (100%)</b>`;
+            this.crashOverlayEl.style.display = 'none';
+        }
+
         this.speedModeEl.innerHTML = `[R] SPEED: <b>${speedMode}</b>`;
         this.audioEl.innerHTML = `[M] AUDIO: <b>${isMuted ? '<span style="color:#ff6666">MUTED</span>' : 'ACTIVE'}</b>`;
 
@@ -558,13 +624,6 @@ export class HUD {
                 this.streamStatusEl.innerHTML = `[K] STREAM: <b style="color:#888888;">○ PAUSED</b>`;
             }
         }
-
-        this.ringProgressEl.innerText = `RINGS: ${ringsPassed} / ${totalRings}`;
-        this.scoreEl.innerText = `SCORE: ${score}`;
-
-        const minutes = Math.floor(lapTime / 60);
-        const seconds = (lapTime % 60).toFixed(1);
-        this.lapTimerEl.innerText = `TIME: ${minutes < 10 ? '0' : ''}${minutes}:${Number(seconds) < 10 ? '0' : ''}${seconds}`;
 
         if (notificationText) {
             this.notificationEl.innerText = notificationText;

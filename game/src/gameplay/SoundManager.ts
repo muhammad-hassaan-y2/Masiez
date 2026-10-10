@@ -295,6 +295,41 @@ export class SoundManager {
         osc.stop(now + 0.5);
     }
 
+    public playCrash(): void {
+        if (!this.ctx || !this.initialized || this.isMuted) return;
+        const now = this.ctx.currentTime;
+
+        // 1. Harsh metallic impact and airframe crunch
+        const crunchOsc = this.ctx.createOscillator();
+        const crunchGain = this.ctx.createGain();
+        crunchOsc.type = 'sawtooth';
+        crunchOsc.frequency.setValueAtTime(340, now);
+        crunchOsc.frequency.exponentialRampToValueAtTime(35, now + 0.4);
+
+        crunchGain.gain.setValueAtTime(0.55, now);
+        crunchGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+        crunchOsc.connect(crunchGain);
+        if (this.masterGain) crunchGain.connect(this.masterGain);
+        crunchOsc.start(now);
+        crunchOsc.stop(now + 0.4);
+
+        // 2. Heavy sub-bass hull destruction boom
+        const subOsc = this.ctx.createOscillator();
+        const subGain = this.ctx.createGain();
+        subOsc.type = 'sine';
+        subOsc.frequency.setValueAtTime(150, now);
+        subOsc.frequency.exponentialRampToValueAtTime(22, now + 0.65);
+
+        subGain.gain.setValueAtTime(0.65, now);
+        subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+
+        subOsc.connect(subGain);
+        if (this.masterGain) subGain.connect(this.masterGain);
+        subOsc.start(now);
+        subOsc.stop(now + 0.65);
+    }
+
     public playTargetAcquired(): void {
         if (!this.ctx || !this.initialized || this.isMuted) return;
         const now = this.ctx.currentTime;

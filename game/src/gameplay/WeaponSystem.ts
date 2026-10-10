@@ -531,16 +531,13 @@ export class WeaponSystem {
                 this.hitMarkerText = wasKilled ? `🎯 DESTROYED: ${ent.roleName.toUpperCase()}!` : (p.isRailgun ? `⚡ CRITICAL HIT: ${ent.roleName}` : `✕ HIT: ${ent.roleName}`);
 
                 if (wasKilled) {
-                    const awardPoints = ent.type === 'ROVER' ? 500 : (ent.type === 'TARGET_DRONE' ? 250 : 150);
-                    missionManager.score += awardPoints;
-                    missionManager.showNotification(`TARGET ELIMINATED! +${awardPoints} PTS`);
+                    missionManager.showNotification(`TARGET NEUTRALIZED: ${ent.roleName.toUpperCase()}`);
                     this.spawnImpactParticles(entHit.hitPoint, [0, 1, 0], [1.0, 0.35, 0.1, 1.0], 28);
                     soundManager.playExplosion();
                     if (this.lockedEntity?.id === ent.id) {
                         this.clearLock(soundManager);
                     }
                 } else {
-                    missionManager.score += 50;
                     this.spawnImpactParticles(entHit.hitPoint, [0, 1, 0], [1.0, 0.9, 0.2, 1.0], 14);
                     soundManager.playImpact();
                 }
@@ -571,7 +568,7 @@ export class WeaponSystem {
         }
     }
 
-    private spawnImpactParticles(
+    public spawnImpactParticles(
         pos: [number, number, number],
         normal: [number, number, number],
         color: [number, number, number, number],
