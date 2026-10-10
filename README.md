@@ -57,12 +57,13 @@ All specs are framework-agnostic, human-readable, and serve as the source of tru
 
 ## Development (Docker Compose)
 
-### 1. Map the local hostname
+### 1. Map the local hostnames
 
 Add to your hosts file:
 
 ```
 127.0.0.1 game.local
+127.0.0.1 jupyter.local
 ```
 
 ### 2. Start and open
@@ -73,7 +74,9 @@ docker compose up --build
 
 Browse to **https://game.local:8443** and accept the self-signed certificate on first visit.
 
-Caddy routes `/ws/*` and `/api/*` to the server (3001), everything else to the game client (5173).
+Caddy routes `/rtc/*` to LiveKit (7880), `/ws/*` and `/api/*` to the server (3001), everything else to the game client (5173). Jupyter is served at **https://jupyter.local:8443** (HTTP and kernel WebSockets proxied through Caddy).
+
+Caddy generates its certificates itself via an internal CA (`tls internal`) — there is no manual `openssl` step. It is enough to click through the warning for plain browsing, but browsers will not open a secure WebSocket to an untrusted certificate, so any browser that talks to LiveKit needs the CA installed (or a locally-trusted cert such as `mkcert`) instead of an exception.
 
 ### Stop
 

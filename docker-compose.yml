@@ -4,8 +4,11 @@ services:
     depends_on:
       - game
       - server
+      - jupyter
+      - livekit
     ports:
       - "8443:443"
+      - "8443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -38,6 +41,43 @@ services:
     volumes:
       - ./game:/workspace/game
       - ./shared:/workspace/shared
+
+  livekit:
+    image: livekit/livekit-server:v1.13.9
+    command: --config /etc/livekit.yaml
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+
+  vision:
+    build:
+      context: ./vision
+    environment:
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=devsecret_devsecret_devsecret_1234
+      - LIVEKIT_ROOM=drone
+    depends_on:
+      - livekit
+    volumes:
+      - ./vision:/app
+
+  jupyter:
+    build:
+      context: ./notebooks
+    environment:
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=devsecret_devsecret_devsecret_1234
+      - LIVEKIT_ROOM=drone
+    depends_on:
+      - server
+      - livekit
+    volumes:
+      - ./notebooks:/workspace
 
 volumes:
   caddy_data:
