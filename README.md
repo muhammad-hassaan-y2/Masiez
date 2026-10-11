@@ -1,10 +1,15 @@
-# Masiez — Autonomous Drone Simulation Platform
+# Masiez — Autonomous AI Drone & WebRTC Vision Platform
 
-An autonomous drone system composed of three independent, decoupled subsystems:
+![Masiez Banner](./masiez_thumbnail.jpg)
 
-1. **Interactive 3D World** — A real-time simulated environment with terrain, obstacles, and 3D drone assets
-2. **Drone API / MCP** — A protocol layer exposing drone sensor data and navigation commands via the Model Context Protocol
-3. **AI Agent** — AI models that observe the drone's state, reason about missions, and issue commands through the MCP interface
+> **An end-to-end autonomous UAV testbed combining 250Hz C++/WASM flight physics, WebGPU 3D worlds, sub-100ms LiveKit WebRTC video streaming, and real-time AI computer vision tracking.**
+
+An autonomous drone system composed of independent, decoupled microservices:
+
+1. **Interactive 3D World (`game/`)** — Real-time WebGPU & C++ WebAssembly 250Hz 6-DoF flight simulator with 5 environments, FPV gimbal optics, tactical scope gearing, and LiveKit WebRTC camera/telemetry streaming
+2. **Drone API / MCP (`server/`)** — Node.js/TypeScript control & safety middleware exposing drone telemetry, geofencing, LiveKit JWT auth, and navigation commands via the Model Context Protocol (JSON-RPC 2.0)
+3. **LiveKit Robotics SFU (`livekit`)** — Sub-100ms WebRTC video transport and bidirectional lossy/reliable robotics data channels
+4. **AI Vision & Autonomy (`vision/` & `notebooks/`)** — Python computer vision subscriber that pulls the live WebRTC drone camera track, runs real-time object detection, and streams bounding-box annotations back to the operator HUD
 
 ## Architecture
 
@@ -50,9 +55,14 @@ All specs are framework-agnostic, human-readable, and serve as the source of tru
 ## Project Structure
 
 ```
-├── specs/          # Source of truth — behavioral specifications
-├── src/            # Implementation (TBD)
-└── tests/          # Test suites (TBD)
+├── game/              # WebGPU 3D Simulator, C++ WASM Physics, FPV HUD & LiveKit WebRTC Publisher
+├── server/            # Backend 1 — MCP Server, Safety/Geofence Validator, WebSocket Hub & LiveKit Auth
+├── shared/            # Shared TypeScript types, telemetry schemas, and PID/flight constants
+├── vision/            # Python Computer Vision Microservice (LiveKit WebRTC subscriber & detector)
+├── notebooks/         # Jupyter prototyping environment for vision & perception models
+├── specs/             # Source of truth — framework-agnostic behavioral specifications
+├── docker-compose.yml # Full microservice orchestration (Caddy TLS, Game, Server, LiveKit, Vision, Jupyter)
+└── livekit.yaml       # LiveKit SFU configuration
 ```
 
 ## Development (Docker Compose)
