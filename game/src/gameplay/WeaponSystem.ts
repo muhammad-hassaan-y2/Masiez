@@ -532,7 +532,12 @@ export class WeaponSystem {
 
                 if (wasKilled) {
                     missionManager.showNotification(`TARGET NEUTRALIZED: ${ent.roleName.toUpperCase()}`);
-                    this.spawnImpactParticles(entHit.hitPoint, [0, 1, 0], [1.0, 0.35, 0.1, 1.0], 28);
+                    const isHeavyVehicle = ent.type === 'TANK' || ent.type === 'MISSILE_TRUCK' || ent.type === 'ATTACK_HELI' || ent.type === 'FIGHTER_JET';
+                    this.spawnImpactParticles(entHit.hitPoint, [0, 1, 0], [1.0, 0.35, 0.1, 1.0], isHeavyVehicle ? 55 : 28);
+                    if (isHeavyVehicle) {
+                        this.spawnImpactParticles(entHit.hitPoint, [0, 1, 0], [1.0, 0.85, 0.2, 1.0], 35);
+                        this.spawnImpactParticles(entHit.hitPoint, [0, 1, 0], [0.5, 0.5, 0.5, 1.0], 30);
+                    }
                     soundManager.playExplosion();
                     if (this.lockedEntity?.id === ent.id) {
                         this.clearLock(soundManager);

@@ -662,18 +662,18 @@ async function bootstrap() {
                 }
             }
 
-            // 3. Collision vs Moving Entities (Patrol Rover, Target Drones, Ground Personnel)
+            // 3. Collision vs Moving Entities (Tanks, Military Craft, Soldier Battalions, Patrol Rovers, Target Drones)
             if (!isCrashed) {
                 for (const ent of entityManager.entities) {
                     if (!ent.isAlive) continue;
-                    const dEnt = Math.hypot(
-                        subPos[0] - ent.pos[0],
-                        subPos[1] - (ent.pos[1] + ent.height * 0.5),
-                        subPos[2] - ent.pos[2]
-                    );
-                    if (dEnt < 0.45 + ent.radius) {
-                        triggerCrash(ent.roleName.toUpperCase(), [subPos[0], subPos[1], subPos[2]]);
-                        break;
+                    const entMinY = ent.pos[1] - (ent.type === 'FIGHTER_JET' || ent.type === 'ATTACK_HELI' ? ent.height * 0.5 : 0);
+                    const entMaxY = ent.pos[1] + ent.height;
+                    if (subPos[1] >= entMinY - 0.35 && subPos[1] <= entMaxY + 0.35) {
+                        const dXZ = Math.hypot(subPos[0] - ent.pos[0], subPos[2] - ent.pos[2]);
+                        if (dXZ < 0.45 + ent.radius) {
+                            triggerCrash(ent.roleName.toUpperCase(), [subPos[0], subPos[1], subPos[2]]);
+                            break;
+                        }
                     }
                 }
             }
@@ -691,8 +691,10 @@ async function bootstrap() {
         const isArmed = physics.isArmed();
         const mode = physics.getMode();
 
-        // 2. Update Moving Entities (Airport Ground Crew, Patrol Rover, Target Drones)
-        entityManager.update(deltaSec, pos);
+        // 2. Update Moving Entities (Tanks, SAM Trucks, Soldier Battalions, Military Craft, Rovers, Target Drones)
+        entityManager.update(deltaSec, pos, (x, z) =>
+            collisionSystem.getGroundHeight(currentMapDef.id, x, z, currentMapDef.groundElevation)
+        );
 
         // 3. Update Drone Weapon System (Plasma Lasers & Explosive Impacts)
         weaponSystem.update(

@@ -1,6 +1,6 @@
 import { GPUDeviceContext } from './Device';
 import { Camera } from '../scene/Camera';
-import { EntityManager, BaseEntity } from '../gameplay/EntityManager';
+import { EntityManager } from '../gameplay/EntityManager';
 import { WeaponSystem } from '../gameplay/WeaponSystem';
 import combatShaderCode from '../shaders/combat.wgsl?raw';
 
@@ -11,7 +11,7 @@ export class CombatRenderer {
     private bindGroup!: GPUBindGroup;
 
     private vertexBuffer!: GPUBuffer;
-    private maxVertices = 16384;
+    private maxVertices = 65536;
     private vertexArray = new Float32Array(this.maxVertices * 12); // pos(3), norm(3), color(4), extra(2) = 12 floats = 48 bytes
 
     constructor(ctx: GPUDeviceContext) {
@@ -167,6 +167,26 @@ export class CombatRenderer {
             }
         };
 
+        /**
+         * Places a box at local offset (ox, oy, oz) rotated by baseYawDeg around (px, py, pz)
+         */
+        const addPart = (
+            px: number, py: number, pz: number,
+            baseYawDeg: number,
+            ox: number, oy: number, oz: number,
+            sx: number, sy: number, sz: number,
+            color: [number, number, number, number],
+            emissive: number = 0,
+            extraYawDeg: number = 0
+        ) => {
+            const bRad = baseYawDeg * (Math.PI / 180.0);
+            const cb = Math.cos(bRad), sb = Math.sin(bRad);
+            const wx = px + ox * cb + oz * sb;
+            const wy = py + oy;
+            const wz = pz - ox * sb + oz * cb;
+            addBox(wx, wy, wz, sx, sy, sz, baseYawDeg + extraYawDeg, color, emissive);
+        };
+
         // 1. Render Moving Entities
         for (const ent of entityManager.entities) {
             if (!ent.isAlive) continue;
@@ -181,49 +201,200 @@ export class CombatRenderer {
                 const legSwing2 = -walkCycle * 0.18;
 
                 // Legs (dark work pants)
-                addBox(px - 0.12, py + 0.42, pz + legSwing1, 0.15, 0.8, 0.18, yaw, [0.15, 0.18, 0.22, 1.0]);
-                addBox(px + 0.12, py + 0.42, pz + legSwing2, 0.15, 0.8, 0.18, yaw, [0.15, 0.18, 0.22, 1.0]);
+                addPart(px, py, pz, yaw, -0.12, 0.42, legSwing1, 0.15, 0.8, 0.18, [0.15, 0.18, 0.22, 1.0]);
+                addPart(px, py, pz, yaw, 0.12, 0.42, legSwing2, 0.15, 0.8, 0.18, [0.15, 0.18, 0.22, 1.0]);
 
                 // Torso with High-Vis Safety Vest
-                addBox(px, py + 1.15, pz, 0.42, 0.65, 0.25, yaw, ent.color);
-                // Reflective silver safety strip across vest
-                addBox(px, py + 1.15, pz, 0.44, 0.12, 0.26, yaw, [0.95, 0.95, 0.95, 1.0], 0.8);
+                addPart(px, py, pz, yaw, 0, 1.15, 0, 0.42, 0.65, 0.25, ent.color);
+                addPart(px, py, pz, yaw, 0, 1.15, 0, 0.44, 0.12, 0.26, [0.95, 0.95, 0.95, 1.0], 0.8);
 
-                // Arms (swinging in opposite direction of legs)
-                addBox(px - 0.26, py + 1.1, pz - legSwing1 * 0.8, 0.12, 0.55, 0.14, yaw, [0.2, 0.25, 0.35, 1.0]);
-                addBox(px + 0.26, py + 1.1, pz - legSwing2 * 0.8, 0.12, 0.55, 0.14, yaw, [0.2, 0.25, 0.35, 1.0]);
+                // Arms
+                addPart(px, py, pz, yaw, -0.26, 1.1, -legSwing1 * 0.8, 0.12, 0.55, 0.14, [0.2, 0.25, 0.35, 1.0]);
+                addPart(px, py, pz, yaw, 0.26, 1.1, -legSwing2 * 0.8, 0.12, 0.55, 0.14, [0.2, 0.25, 0.35, 1.0]);
 
-                // Head with Safety Hardhat / Cap
-                addBox(px, py + 1.62, pz, 0.24, 0.25, 0.24, yaw, [0.88, 0.68, 0.52, 1.0]); // Skin face
-                addBox(px, py + 1.76, pz, 0.28, 0.14, 0.30, yaw, [0.95, 0.85, 0.1, 1.0]); // Yellow Hardhat
+                // Head with Safety Hardhat
+                addPart(px, py, pz, yaw, 0, 1.62, 0, 0.24, 0.25, 0.24, [0.88, 0.68, 0.52, 1.0]);
+                addPart(px, py, pz, yaw, 0, 1.76, 0, 0.28, 0.14, 0.30, [0.95, 0.85, 0.1, 1.0]);
+            } else if (ent.type === 'SOLDIER') {
+                // Armed Infantry Battalion Soldier (Camo uniform, tactical plate carrier, Kevlar helmet, NVGs, Assault Rifle)
+                const walkCycle = Math.sin(ent.walkPhase);
+                const legSwing1 = walkCycle * 0.20;
+                const legSwing2 = -walkCycle * 0.20;
+
+                // Combat boots & camo trousers
+                addPart(px, py, pz, yaw, -0.13, 0.42, legSwing1, 0.16, 0.82, 0.19, ent.color);
+                addPart(px, py, pz, yaw, 0.13, 0.42, legSwing2, 0.16, 0.82, 0.19, ent.color);
+
+                // Camo combat torso + Plate Carrier Armored Vest
+                addPart(px, py, pz, yaw, 0, 1.15, 0, 0.44, 0.66, 0.26, ent.color);
+                addPart(px, py, pz, yaw, 0, 1.16, 0.02, 0.40, 0.48, 0.30, [0.16, 0.19, 0.15, 1.0]);
+
+                // Tactical Rucksack / Backpack
+                addPart(px, py, pz, yaw, 0, 1.18, -0.20, 0.34, 0.46, 0.18, [0.20, 0.23, 0.18, 1.0]);
+
+                // Arms positioned holding rifle at tactical ready
+                addPart(px, py, pz, yaw, -0.27, 1.12, 0.10, 0.13, 0.52, 0.16, ent.color);
+                addPart(px, py, pz, yaw, 0.25, 1.12, 0.18, 0.13, 0.50, 0.22, ent.color);
+
+                // M4 / Carbine Assault Rifle (Receiver + Barrel + Magazine)
+                addPart(px, py, pz, yaw, 0.12, 1.08, 0.36, 0.08, 0.12, 0.68, [0.10, 0.11, 0.12, 1.0]);
+                addPart(px, py, pz, yaw, 0.12, 0.96, 0.32, 0.06, 0.18, 0.09, [0.14, 0.14, 0.14, 1.0]);
+
+                // Head + Ballistic Kevlar Helmet + Night-Vision Goggles (NVG)
+                addPart(px, py, pz, yaw, 0, 1.62, 0, 0.23, 0.24, 0.23, [0.85, 0.66, 0.50, 1.0]);
+                addPart(px, py, pz, yaw, 0, 1.74, -0.01, 0.30, 0.18, 0.32, ent.color);
+                addPart(px, py, pz, yaw, 0, 1.68, 0.15, 0.20, 0.08, 0.08, [0.15, 0.95, 0.45, 1.0], 0.9); // Glowing NVG optics
             } else if (ent.type === 'ROVER') {
-                // Airport Security Rover
-                // Main chassis
-                addBox(px, py + 0.4, pz, 1.6, 0.5, 2.6, yaw, [0.2, 0.25, 0.3, 1.0]);
-                // Cabin upper shell
-                addBox(px, py + 0.85, pz - 0.2, 1.2, 0.5, 1.4, yaw, ent.color);
-                // Windshield
-                addBox(px, py + 0.88, pz + 0.4, 1.1, 0.35, 0.2, yaw, [0.1, 0.35, 0.5, 0.85]);
+                // Autonomous Patrol Rover
+                addPart(px, py, pz, yaw, 0, 0.4, 0, 1.6, 0.5, 2.6, [0.2, 0.25, 0.3, 1.0]);
+                addPart(px, py, pz, yaw, 0, 0.85, -0.2, 1.2, 0.5, 1.4, ent.color);
+                addPart(px, py, pz, yaw, 0, 0.88, 0.4, 1.1, 0.35, 0.2, [0.1, 0.35, 0.5, 0.85]);
                 // 4 Wheels
-                addBox(px - 0.85, py + 0.3, pz + 0.8, 0.28, 0.58, 0.58, yaw, [0.1, 0.1, 0.1, 1.0]);
-                addBox(px + 0.85, py + 0.3, pz + 0.8, 0.28, 0.58, 0.58, yaw, [0.1, 0.1, 0.1, 1.0]);
-                addBox(px - 0.85, py + 0.3, pz - 0.8, 0.28, 0.58, 0.58, yaw, [0.1, 0.1, 0.1, 1.0]);
-                addBox(px + 0.85, py + 0.3, pz - 0.8, 0.28, 0.58, 0.58, yaw, [0.1, 0.1, 0.1, 1.0]);
+                addPart(px, py, pz, yaw, -0.85, 0.3, 0.8, 0.28, 0.58, 0.58, [0.1, 0.1, 0.1, 1.0]);
+                addPart(px, py, pz, yaw, 0.85, 0.3, 0.8, 0.28, 0.58, 0.58, [0.1, 0.1, 0.1, 1.0]);
+                addPart(px, py, pz, yaw, -0.85, 0.3, -0.8, 0.28, 0.58, 0.58, [0.1, 0.1, 0.1, 1.0]);
+                addPart(px, py, pz, yaw, 0.85, 0.3, -0.8, 0.28, 0.58, 0.58, [0.1, 0.1, 0.1, 1.0]);
 
                 // Flashing Amber Roof Strobe
                 const flash = Math.sin(timeSec * 12.0) > 0 ? 1.0 : 0.2;
-                addBox(px, py + 1.2, pz - 0.2, 0.3, 0.2, 0.3, yaw, [1.0, 0.65, 0.1, 1.0], flash);
+                addPart(px, py, pz, yaw, 0, 1.2, -0.2, 0.3, 0.2, 0.3, [1.0, 0.65, 0.1, 1.0], flash);
+            } else if (ent.type === 'TANK') {
+                // Heavy Main Battle Tank (M1A2 Abrams / T-90M / Leopard 2A7)
+                const turretYaw = ent.turretYawDeg ?? yaw;
+                const darkSteel: [number, number, number, number] = [0.13, 0.14, 0.15, 1.0];
+                const gunMetal: [number, number, number, number] = [0.18, 0.20, 0.22, 1.0];
+                const accentArmor: [number, number, number, number] = [
+                    Math.min(1.0, ent.color[0] * 1.15),
+                    Math.min(1.0, ent.color[1] * 1.15),
+                    Math.min(1.0, ent.color[2] * 1.15),
+                    1.0
+                ];
+
+                // 1. Left & Right Continuous Armored Treads
+                addPart(px, py, pz, yaw, -1.42, 0.46, 0, 0.66, 0.88, 5.5, darkSteel);
+                addPart(px, py, pz, yaw, 1.42, 0.46, 0, 0.66, 0.88, 5.5, darkSteel);
+
+                // Side Ballistic Skirts / Reactive Armor
+                addPart(px, py, pz, yaw, -1.52, 0.72, 0, 0.16, 0.46, 5.2, accentArmor);
+                addPart(px, py, pz, yaw, 1.52, 0.72, 0, 0.16, 0.46, 5.2, accentArmor);
+
+                // 2. Main Armored Hull & Sloped Front Glacis
+                addPart(px, py, pz, yaw, 0, 0.80, 0, 2.35, 0.82, 5.2, ent.color);
+                addPart(px, py, pz, yaw, 0, 0.94, 2.25, 2.25, 0.46, 0.95, accentArmor);
+                // Rear Engine Deck Grille
+                addPart(px, py, pz, yaw, 0, 1.02, -1.95, 2.0, 0.36, 1.25, gunMetal);
+
+                // 3. Rotating Tank Turret & Bustle Rack
+                addPart(px, py, pz, turretYaw, 0, 1.54, -0.15, 2.15, 0.74, 2.75, ent.color);
+                addPart(px, py, pz, turretYaw, 0, 1.58, -1.72, 1.82, 0.56, 0.85, accentArmor);
+                // Gun Mantlet
+                addPart(px, py, pz, turretYaw, 0, 1.54, 1.35, 0.85, 0.52, 0.55, gunMetal);
+
+                // 4. 120mm Smoothbore Main Cannon Barrel + Bore Evacuator + Muzzle Brake
+                addPart(px, py, pz, turretYaw, 0, 1.56, 3.05, 0.22, 0.22, 3.4, gunMetal);
+                addPart(px, py, pz, turretYaw, 0, 1.56, 2.55, 0.34, 0.34, 0.68, accentArmor);
+                addPart(px, py, pz, turretYaw, 0, 1.56, 4.72, 0.30, 0.30, 0.28, darkSteel);
+
+                // 5. Commander Cupola, Heavy .50 Cal Roof MG & Tactical Strobe
+                addPart(px, py, pz, turretYaw, 0.55, 2.02, -0.25, 0.62, 0.30, 0.62, accentArmor);
+                addPart(px, py, pz, turretYaw, 0.55, 2.24, 0.20, 0.12, 0.14, 0.95, darkSteel);
+                const tankStrobe = Math.sin(timeSec * 8.0 + px) > 0 ? 1.0 : 0.2;
+                addPart(px, py, pz, turretYaw, -0.68, 2.02, -1.35, 0.22, 0.20, 0.22, [1.0, 0.3, 0.05, 1.0], tankStrobe);
+            } else if (ent.type === 'MISSILE_TRUCK') {
+                // Mobile SAM Launcher / Armored Missile Carrier Truck
+                const turretYaw = ent.turretYawDeg ?? yaw;
+                const darkWheel: [number, number, number, number] = [0.11, 0.12, 0.13, 1.0];
+
+                // 6x6 Chassis Frame & Armored Cab
+                addPart(px, py, pz, yaw, 0, 0.65, 0, 2.15, 0.55, 5.4, [0.18, 0.20, 0.22, 1.0]);
+                addPart(px, py, pz, yaw, 0, 1.35, 1.65, 2.10, 1.05, 1.8, ent.color);
+                addPart(px, py, pz, yaw, 0, 1.48, 2.56, 1.80, 0.40, 0.12, [0.12, 0.38, 0.52, 1.0]);
+
+                // 6 Heavy Off-Road Wheels (3 axles)
+                for (const axleZ of [1.7, 0.0, -1.7]) {
+                    addPart(px, py, pz, yaw, -1.14, 0.45, axleZ, 0.36, 0.88, 0.88, darkWheel);
+                    addPart(px, py, pz, yaw, 1.14, 0.45, axleZ, 0.36, 0.88, 0.88, darkWheel);
+                }
+
+                // Rotating Quad-SAM Missile Pod & Spinning Phased-Array Radar
+                addPart(px, py, pz, turretYaw, 0, 1.22, -0.95, 1.45, 0.62, 1.45, ent.color);
+                addPart(px, py, pz, turretYaw, 0, 1.92, -0.95, 1.72, 0.92, 2.45, ent.color);
+                // Red Armed Missile Warhead Caps
+                addPart(px, py, pz, turretYaw, -0.45, 2.02, 0.32, 0.38, 0.38, 0.16, [0.95, 0.2, 0.15, 1.0], 0.8);
+                addPart(px, py, pz, turretYaw, 0.45, 2.02, 0.32, 0.38, 0.38, 0.16, [0.95, 0.2, 0.15, 1.0], 0.8);
+                // Spinning Radar Dish
+                addPart(px, py, pz, turretYaw, 0, 2.58, -1.45, 1.25, 0.34, 0.20, [0.82, 0.86, 0.82, 1.0], 0.0, timeSec * 200.0);
+            } else if (ent.type === 'ATTACK_HELI') {
+                // Tactical Attack Helicopter Gunship (AH-64 Apache / Ka-52)
+                const darkMetal: [number, number, number, number] = [0.14, 0.15, 0.16, 1.0];
+
+                // Main Armored Fuselage & Stepped Tandem Cockpit
+                addPart(px, py, pz, yaw, 0, 0, 0, 1.38, 1.22, 4.8, ent.color);
+                addPart(px, py, pz, yaw, 0, 0.44, 0.85, 1.12, 0.65, 2.2, [0.12, 0.35, 0.48, 1.0]);
+
+                // Nose FLIR Sensor & 30mm Chain Gun
+                addPart(px, py, pz, yaw, 0, -0.25, 2.55, 0.55, 0.45, 0.62, darkMetal);
+                addPart(px, py, pz, yaw, 0, -0.48, 2.65, 0.14, 0.14, 1.25, darkMetal);
+
+                // Stub Wings & Under-Wing Rocket/Hellfire Pods
+                addPart(px, py, pz, yaw, 0, 0.05, 0.1, 4.2, 0.20, 0.92, ent.color);
+                addPart(px, py, pz, yaw, -1.62, -0.24, 0.2, 0.44, 0.44, 1.65, darkMetal);
+                addPart(px, py, pz, yaw, 1.62, -0.24, 0.2, 0.44, 0.44, 1.65, darkMetal);
+
+                // Landing Skids
+                addPart(px, py, pz, yaw, -0.82, -0.80, 0.1, 0.14, 0.14, 3.2, darkMetal);
+                addPart(px, py, pz, yaw, 0.82, -0.80, 0.1, 0.14, 0.14, 3.2, darkMetal);
+
+                // Tail Boom & Vertical Stabilizer Fin
+                addPart(px, py, pz, yaw, 0, 0.14, -3.7, 0.52, 0.55, 3.5, ent.color);
+                addPart(px, py, pz, yaw, 0, 0.82, -5.2, 0.22, 1.32, 0.85, ent.color);
+
+                // High-Speed Spinning 4-Blade Main Rotor
+                const rotorAngle = (timeSec * 760.0) % 360.0;
+                addPart(px, py, pz, yaw, 0, 0.82, 0.1, 0.45, 0.35, 0.45, darkMetal);
+                addPart(px, py, pz, yaw, 0, 0.96, 0.1, 7.8, 0.07, 0.36, darkMetal, 0.0, rotorAngle);
+                addPart(px, py, pz, yaw, 0, 0.96, 0.1, 0.36, 0.07, 7.8, darkMetal, 0.0, rotorAngle);
+
+                // Navigation Strobe Lights (Port Red / Starboard Green)
+                addPart(px, py, pz, yaw, -2.12, 0.08, 0.1, 0.22, 0.22, 0.22, [1.0, 0.15, 0.15, 1.0], 1.0);
+                addPart(px, py, pz, yaw, 2.12, 0.08, 0.1, 0.22, 0.22, 0.22, [0.15, 1.0, 0.35, 1.0], 1.0);
+            } else if (ent.type === 'FIGHTER_JET') {
+                // Supersonic Stealth Strike Fighter (F-22 Raptor / Su-57 Felon)
+                // Main Stealth Fuselage & Radar Nose Cone
+                addPart(px, py, pz, yaw, 0, 0, 0, 1.85, 0.70, 6.2, ent.color);
+                addPart(px, py, pz, yaw, 0, -0.04, 3.9, 0.92, 0.46, 2.1, [0.22, 0.25, 0.29, 1.0]);
+
+                // Gold-Tinted Bubble Cockpit Canopy
+                addPart(px, py, pz, yaw, 0, 0.46, 1.60, 0.90, 0.45, 2.15, [0.78, 0.60, 0.18, 1.0]);
+
+                // Swept Delta Main Wings & Forward Strakes
+                addPart(px, py, pz, yaw, 0, -0.02, -0.45, 6.8, 0.16, 2.55, ent.color);
+                addPart(px, py, pz, yaw, 0, 0.02, 1.15, 3.5, 0.14, 1.6, ent.color);
+
+                // Wingtip Air-to-Air Missiles
+                addPart(px, py, pz, yaw, -3.45, -0.06, -0.40, 0.18, 0.18, 1.95, [0.90, 0.92, 0.95, 1.0]);
+                addPart(px, py, pz, yaw, 3.45, -0.06, -0.40, 0.18, 0.18, 1.95, [0.90, 0.92, 0.95, 1.0]);
+
+                // Twin Canted Vertical Stabilizers & Horizontal Elevators
+                addPart(px, py, pz, yaw, -0.85, 0.72, -2.45, 0.18, 1.25, 1.45, ent.color);
+                addPart(px, py, pz, yaw, 0.85, 0.72, -2.45, 0.18, 1.25, 1.45, ent.color);
+                addPart(px, py, pz, yaw, 0, -0.04, -2.75, 3.8, 0.14, 1.15, ent.color);
+
+                // Twin Glowing Afterburner Jet Nozzles
+                const burnerPulse = 0.85 + 0.3 * Math.sin(timeSec * 30.0);
+                addPart(px, py, pz, yaw, -0.48, 0, -3.45, 0.46, 0.40, 1.15 * burnerPulse, [1.0, 0.52, 0.10, 1.0], 1.0);
+                addPart(px, py, pz, yaw, 0.48, 0, -3.45, 0.46, 0.40, 1.15 * burnerPulse, [1.0, 0.52, 0.10, 1.0], 1.0);
             } else if (ent.type === 'TARGET_DRONE') {
                 // Aerial Target Drone: Cross-frame with glowing red target rings
-                addBox(px, py, pz, 1.4, 0.12, 0.18, yaw, [0.15, 0.15, 0.15, 1.0]);
-                addBox(px, py, pz, 0.18, 0.12, 1.4, yaw, [0.15, 0.15, 0.15, 1.0]);
+                addPart(px, py, pz, yaw, 0, 0, 0, 1.4, 0.12, 0.18, [0.15, 0.15, 0.15, 1.0]);
+                addPart(px, py, pz, yaw, 0, 0, 0, 0.18, 0.12, 1.4, [0.15, 0.15, 0.15, 1.0]);
                 // Center Glowing Core
-                addBox(px, py, pz, 0.4, 0.3, 0.4, yaw, ent.color, 1.0);
+                addPart(px, py, pz, yaw, 0, 0, 0, 0.4, 0.3, 0.4, ent.color, 1.0);
                 // Propeller pods
-                addBox(px - 0.65, py + 0.05, pz, 0.3, 0.04, 0.3, yaw, [0.8, 0.1, 0.1, 1.0], 0.7);
-                addBox(px + 0.65, py + 0.05, pz, 0.3, 0.04, 0.3, yaw, [0.8, 0.1, 0.1, 1.0], 0.7);
-                addBox(px, py + 0.05, pz - 0.65, 0.3, 0.04, 0.3, yaw, [0.8, 0.1, 0.1, 1.0], 0.7);
-                addBox(px, py + 0.05, pz + 0.65, 0.3, 0.04, 0.3, yaw, [0.8, 0.1, 0.1, 1.0], 0.7);
+                addPart(px, py, pz, yaw, -0.65, 0.05, 0, 0.3, 0.04, 0.3, [0.8, 0.1, 0.1, 1.0], 0.7);
+                addPart(px, py, pz, yaw, 0.65, 0.05, 0, 0.3, 0.04, 0.3, [0.8, 0.1, 0.1, 1.0], 0.7);
+                addPart(px, py, pz, yaw, 0, 0.05, -0.65, 0.3, 0.04, 0.3, [0.8, 0.1, 0.1, 1.0], 0.7);
+                addPart(px, py, pz, yaw, 0, 0.05, 0.65, 0.3, 0.04, 0.3, [0.8, 0.1, 0.1, 1.0], 0.7);
             }
         }
 
