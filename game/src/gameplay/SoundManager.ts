@@ -438,6 +438,79 @@ export class SoundManager {
         osc2.stop(now + 0.18);
     }
 
+    private lastBattleBoomTime: number = 0;
+    private lastBattleGunTime: number = 0;
+    private lastSamWarnTime: number = 0;
+
+    public playBattlefieldExplosion(distance: number): void {
+        if (!this.ctx || !this.initialized || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        if (now - this.lastBattleBoomTime < 0.18 || distance > 320) return;
+        this.lastBattleBoomTime = now;
+
+        const atten = Math.max(0.03, Math.min(0.38, 18.0 / (distance + 35.0)));
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(125, now);
+        osc.frequency.exponentialRampToValueAtTime(22, now + 0.42);
+
+        gain.gain.setValueAtTime(atten, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+
+        osc.connect(gain);
+        if (this.masterGain) gain.connect(this.masterGain);
+
+        osc.start(now);
+        osc.stop(now + 0.42);
+    }
+
+    public playBattlefieldGunfire(distance: number): void {
+        if (!this.ctx || !this.initialized || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        if (now - this.lastBattleGunTime < 0.09 || distance > 200) return;
+        this.lastBattleGunTime = now;
+
+        const atten = Math.max(0.02, Math.min(0.18, 10.0 / (distance + 25.0)));
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(320 + Math.random() * 120, now);
+        osc.frequency.exponentialRampToValueAtTime(65, now + 0.055);
+
+        gain.gain.setValueAtTime(atten, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+
+        osc.connect(gain);
+        if (this.masterGain) gain.connect(this.masterGain);
+
+        osc.start(now);
+        osc.stop(now + 0.055);
+    }
+
+    public playMissileWarning(): void {
+        if (!this.ctx || !this.initialized || this.isMuted) return;
+        const now = this.ctx.currentTime;
+        if (now - this.lastSamWarnTime < 0.45) return;
+        this.lastSamWarnTime = now;
+
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(1480, now);
+        osc.frequency.setValueAtTime(1920, now + 0.06);
+
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+        osc.connect(gain);
+        if (this.masterGain) gain.connect(this.masterGain);
+        osc.start(now);
+        osc.stop(now + 0.14);
+    }
+
     public toggleMute(): boolean {
         this.isMuted = !this.isMuted;
         if (this.masterGain && this.ctx) {
@@ -450,3 +523,4 @@ export class SoundManager {
         return this.isMuted;
     }
 }
+

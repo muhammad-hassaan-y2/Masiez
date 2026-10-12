@@ -224,7 +224,7 @@ export class HUD {
         this.airframeStatusEl = document.createElement('div');
         this.airframeStatusEl.innerHTML = `AIRFRAME: <b style="color:#00ff88;">● INTACT (100%)</b>`;
         this.missionDescEl = document.createElement('div');
-        this.missionDescEl.innerHTML = `<span style="color:#88ddff;">MISSION:</span> TACTICAL RECON & AIRSPACE PATROL`;
+        this.missionDescEl.innerHTML = `<span style="color:#00e5ff;">⚔ ALLIED: 0</span> | <span style="color:#ff3355;">HOSTILE: 0</span> — <span style="color:#ffcc00;">WARZONE ACTIVE</span>`;
         this.opsPanel.appendChild(this.airframeStatusEl);
         this.opsPanel.appendChild(this.missionDescEl);
 
@@ -756,7 +756,8 @@ export class HUD {
         camera?: Camera,
         camMetrics?: CameraStreamMetrics,
         livekitMetrics?: LiveKitMetrics,
-        aiDetections?: { detections: VisionDetection[]; width: number; height: number }
+        aiDetections?: { detections: VisionDetection[]; width: number; height: number },
+        warStats?: { alliedKills: number; hostileKills: number; latestLog: string; samWarning: boolean }
     ): void {
         const groundSpeed = Math.sqrt(vel[0] * vel[0] + vel[2] * vel[2]);
         this.altEl.innerText = `ALT (AGL): ${sensors.altitudeAGL.toFixed(1)} m`;
@@ -776,6 +777,14 @@ export class HUD {
             this.stateEl.innerHTML = `STATE: <span style="color:${armed ? '#00ff66' : '#ff3333'}; font-weight: bold;">${armed ? '● ARMED' : '○ DISARMED'}</span>`;
             this.airframeStatusEl.innerHTML = `AIRFRAME: <b style="color:#00ff88;">● INTACT (100%)</b>`;
             this.crashOverlayEl.style.display = 'none';
+        }
+
+        if (warStats && this.missionDescEl) {
+            if (warStats.samWarning) {
+                this.missionDescEl.innerHTML = `<span style="color:#ff2244; font-weight:900;">⚠ RWR WARNING: INCOMING HOSTILE SAM MISSILE — EVADE!</span>`;
+            } else {
+                this.missionDescEl.innerHTML = `<span style="color:#00e5ff;">⚔ ALLIED: ${warStats.alliedKills}</span> | <span style="color:#ff3355;">HOSTILE: ${warStats.hostileKills}</span> — <span style="color:#ffdd66;">${warStats.latestLog}</span>`;
+            }
         }
 
         this.speedModeEl.innerHTML = `[R] SPEED: <b>${speedMode}</b>`;

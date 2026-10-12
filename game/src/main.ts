@@ -691,12 +691,16 @@ async function bootstrap() {
         const isArmed = physics.isArmed();
         const mode = physics.getMode();
 
-        // 2. Update Moving Entities (Tanks, SAM Trucks, Soldier Battalions, Military Craft, Rovers, Target Drones)
-        entityManager.update(deltaSec, pos, (x, z) =>
-            collisionSystem.getGroundHeight(currentMapDef.id, x, z, currentMapDef.groundElevation)
+        // 2. Update Real-Time Battlefield War AI (Tanks, SAMs, Soldier Battalions, Helicopters, Jets)
+        const warCallbacks = weaponSystem.createWarCallbacks(soundManager);
+        entityManager.update(
+            deltaSec,
+            pos,
+            (x, z) => collisionSystem.getGroundHeight(currentMapDef.id, x, z, currentMapDef.groundElevation),
+            warCallbacks
         );
 
-        // 3. Update Drone Weapon System (Plasma Lasers & Explosive Impacts)
+        // 3. Update Drone Weapon System & Battlefield Ordnance (Tank Shells, SAM Missiles, Tracers, Artillery)
         weaponSystem.update(
             deltaSec,
             collisionSystem,
@@ -704,8 +708,24 @@ async function bootstrap() {
             missionManager,
             soundManager,
             currentMapDef.id,
-            currentMapDef.groundElevation
+            currentMapDef.groundElevation,
+            pos
         );
+
+        // Check if a Hostile SAM Missile or Tank Shell directly hit the player's drone
+        if (!isCrashed) {
+            for (let i = weaponSystem.projectiles.length - 1; i >= 0; --i) {
+                const pr = weaponSystem.projectiles[i];
+                if (pr.faction === 'HOSTILE' && (pr.kind === 'SAM_MISSILE' || pr.kind === 'TANK_SHELL')) {
+                    const dDrone = Math.hypot(pr.pos[0] - pos[0], pr.pos[1] - pos[1], pr.pos[2] - pos[2]);
+                    if (dDrone < 1.65) {
+                        weaponSystem.projectiles.splice(i, 1);
+                        triggerCrash(`HIT BY HOSTILE ${pr.kind === 'SAM_MISSILE' ? 'SAM MISSILE' : 'TANK SHELL'}`, [pos[0], pos[1], pos[2]]);
+                        break;
+                    }
+                }
+            }
+        }
 
         const groundSpeed = Math.sqrt(vel[0]*vel[0] + vel[2]*vel[2]);
 
@@ -735,7 +755,7 @@ async function bootstrap() {
             currentMapDef.id
         );
 
-        // Update HUD with Tactical Reticle, Scope Overlay & Lead Pip
+        // Update HUD with Tactical Reticle, Scope Overlay, Lead Pip & Live Warzone Feed
         hud.update(
             sensors,
             pos,
@@ -756,7 +776,13 @@ async function bootstrap() {
             camera,
             cameraStreamer.getMetrics(),
             livekit.getMetrics(),
-            livekit.getLatestDetections()
+            livekit.getLatestDetections(),
+            {
+                alliedKills: entityManager.alliedKills,
+                hostileKills: entityManager.hostileKills,
+                latestLog: entityManager.latestBattleLog,
+                samWarning: entityManager.incomingSamWarning
+            }
         );
 
         // Send telemetry to server & LiveKit DataChannel at 10Hz
