@@ -1,4 +1,4 @@
-FROM node:20-debian AS base
+FROM node:26-bookworm AS base
 WORKDIR /workspace
 
 FROM base AS deps
