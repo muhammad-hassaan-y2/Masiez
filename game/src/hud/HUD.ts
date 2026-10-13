@@ -59,9 +59,12 @@ export class HUD {
     private menuSpeedBtn!: HTMLButtonElement;
     private menuCameraBtn!: HTMLButtonElement;
     private menuLiveKitBtn!: HTMLButtonElement;
+    private menuLiveKitStatusBadge!: HTMLElement;
+    private menuLiveKitTeleopBadge!: HTMLElement;
+    private livekitUrlInput!: HTMLInputElement;
 
     // Callbacks
-    public onLiveKitToggle?: () => void;
+    public onLiveKitToggle?: (customUrl?: string) => void;
     public onMenuOpenChange?: (isOpen: boolean) => void;
     public onMapSelect?: (map: MapDefinition) => void;
     public onCameraToggle?: () => void;
@@ -785,7 +788,87 @@ export class HUD {
         settingsSection.appendChild(settingsGrid);
         menuCard.appendChild(settingsSection);
 
-        // Section 2: Level / Map Selection (Changed only via User Menu, not during interactive gameplay)
+        // Section 2: LiveKit Robotics WebRTC Hub & Teleoperation Card
+        const livekitSection = document.createElement('div');
+        livekitSection.style.cssText = `
+            background: rgba(0, 229, 255, 0.08);
+            border: 1px solid rgba(0, 229, 255, 0.35);
+            border-radius: 12px;
+            padding: 14px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        `;
+        const lkHeader = document.createElement('div');
+        lkHeader.style.cssText = `display: flex; justify-content: space-between; align-items: center;`;
+        lkHeader.innerHTML = `
+            <span style="font-size: 13px; font-weight: 800; color: #00e5ff; letter-spacing: 1px;">📡 LIVEKIT ROBOTICS HUB</span>
+        `;
+        this.menuLiveKitStatusBadge = document.createElement('span');
+        this.menuLiveKitStatusBadge.style.cssText = `font-size: 12px; font-weight: 800; color: #ffcc00;`;
+        this.menuLiveKitStatusBadge.innerText = 'CONNECTING...';
+        lkHeader.appendChild(this.menuLiveKitStatusBadge);
+        livekitSection.appendChild(lkHeader);
+
+        const lkDesc = document.createElement('div');
+        lkDesc.style.cssText = `font-size: 11px; color: #b0e5f5; line-height: 1.4;`;
+        lkDesc.innerText = 'Direct WebRTC FPV video streaming & low-latency bidirectional DataChannels (teleoperation, telemetry, RPC). Connected directly to Jupyter / Kaggle / AI agents without server transcoding.';
+        livekitSection.appendChild(lkDesc);
+
+        const lkUrlRow = document.createElement('div');
+        lkUrlRow.style.cssText = `display: flex; gap: 8px; align-items: center;`;
+        this.livekitUrlInput = document.createElement('input');
+        this.livekitUrlInput.type = 'text';
+        this.livekitUrlInput.value = (window.location.protocol === 'https:' && window.location.hostname === 'game.local')
+            ? `wss://${window.location.host}/rtc`
+            : `ws://${window.location.hostname || 'localhost'}:7880`;
+        this.livekitUrlInput.style.cssText = `
+            flex: 1;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(0, 255, 204, 0.4);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: #ffffff;
+            font-size: 12px;
+            font-family: monospace;
+            outline: none;
+        `;
+        const lkConnectBtn = document.createElement('button');
+        lkConnectBtn.innerText = 'CONNECT';
+        lkConnectBtn.style.cssText = `
+            background: rgba(0, 255, 204, 0.28);
+            border: 1px solid #00ffcc;
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        `;
+        lkConnectBtn.onclick = (e) => {
+            e.stopPropagation();
+            const customUrl = this.livekitUrlInput.value.trim();
+            this.onLiveKitToggle?.(customUrl);
+        };
+        lkUrlRow.appendChild(this.livekitUrlInput);
+        lkUrlRow.appendChild(lkConnectBtn);
+        livekitSection.appendChild(lkUrlRow);
+
+        const lkDetailsRow = document.createElement('div');
+        lkDetailsRow.style.cssText = `font-size: 11px; color: #88ddff; display: flex; justify-content: space-between;`;
+        lkDetailsRow.innerHTML = `
+            <span>TRACK: <b>drone-fpv (30 FPS WebRTC)</b></span>
+            <span>DATA: <b>telemetry, teleop, mission</b></span>
+        `;
+        this.menuLiveKitTeleopBadge = document.createElement('span');
+        this.menuLiveKitTeleopBadge.innerHTML = `TELEOP: <b style="color:#ffcc00">STANDBY</b>`;
+        lkDetailsRow.appendChild(this.menuLiveKitTeleopBadge);
+        livekitSection.appendChild(lkDetailsRow);
+
+        menuCard.appendChild(livekitSection);
+
+        // Section 3: Level / Map Selection (Changed only via User Menu, not during interactive gameplay)
         const levelSection = document.createElement('div');
         levelSection.style.cssText = `
             display: flex;
@@ -991,30 +1074,56 @@ export class HUD {
         // LiveKit Robotics RTC Status
         if (this.livekitStatusEl) {
             if (livekitMetrics) {
+                const teleopColor = livekitMetrics.teleopActive ? '#00ff88' : '#88ddff';
+                const teleopText = livekitMetrics.teleopActive ? 'REMOTE ACTIVE' : 'STANDBY';
+                if (this.menuLiveKitTeleopBadge) {
+                    this.menuLiveKitTeleopBadge.innerHTML = `TELEOP: <b style="color:${teleopColor}">${teleopText}</b>`;
+                }
+
                 if (livekitMetrics.status === 'streaming') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#00ff88;">● STREAMING [${livekitMetrics.room}]</b>`;
                     if (this.menuLiveKitBtn) {
                         this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#00ff88;">STREAMING (${livekitMetrics.room})</b>`;
+                    }
+                    if (this.menuLiveKitStatusBadge) {
+                        this.menuLiveKitStatusBadge.style.color = '#00ff88';
+                        this.menuLiveKitStatusBadge.innerText = `● STREAMING [${livekitMetrics.room}]`;
                     }
                 } else if (livekitMetrics.status === 'connected') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#00e5ff;">○ CONNECTED [${livekitMetrics.room}]</b>`;
                     if (this.menuLiveKitBtn) {
                         this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#00e5ff;">CONNECTED</b>`;
                     }
+                    if (this.menuLiveKitStatusBadge) {
+                        this.menuLiveKitStatusBadge.style.color = '#00e5ff';
+                        this.menuLiveKitStatusBadge.innerText = `○ CONNECTED [${livekitMetrics.room}]`;
+                    }
                 } else if (livekitMetrics.status === 'connecting') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#ffcc00;">CONNECTING...</b>`;
                     if (this.menuLiveKitBtn) {
                         this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#ffcc00;">CONNECTING...</b>`;
+                    }
+                    if (this.menuLiveKitStatusBadge) {
+                        this.menuLiveKitStatusBadge.style.color = '#ffcc00';
+                        this.menuLiveKitStatusBadge.innerText = 'CONNECTING...';
                     }
                 } else if (livekitMetrics.status === 'error') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#ff4444;">ERROR / STANDBY</b>`;
                     if (this.menuLiveKitBtn) {
                         this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#ff4444;">RECONNECT</b>`;
                     }
+                    if (this.menuLiveKitStatusBadge) {
+                        this.menuLiveKitStatusBadge.style.color = '#ff4444';
+                        this.menuLiveKitStatusBadge.innerText = 'DISCONNECTED / STANDBY';
+                    }
                 } else {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#888888;">STANDBY</b>`;
                     if (this.menuLiveKitBtn) {
                         this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#888888;">CONNECT</b>`;
+                    }
+                    if (this.menuLiveKitStatusBadge) {
+                        this.menuLiveKitStatusBadge.style.color = '#888888';
+                        this.menuLiveKitStatusBadge.innerText = 'DISCONNECTED';
                     }
                 }
             } else {

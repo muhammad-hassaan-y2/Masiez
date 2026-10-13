@@ -14,6 +14,13 @@ export interface VisionAnnotationsPayload {
     timestamp: number;
 }
 
+export interface TeleopAxes {
+    throttle: number; // -1.0 (descend) to +1.0 (climb)
+    pitch: number;    // -1.0 (reverse) to +1.0 (forward)
+    roll: number;     // -1.0 (strafe left) to +1.0 (strafe right)
+    yaw: number;      // -1.0 (turn left) to +1.0 (turn right)
+}
+
 export interface LiveKitMetrics {
     status: 'disconnected' | 'connecting' | 'connected' | 'streaming' | 'error';
     room: string;
@@ -21,7 +28,9 @@ export interface LiveKitMetrics {
     rttMs: number;
     videoTrackPublished: boolean;
     packetsSent: number;
+    packetsReceived: number;
     detectionsCount: number;
+    teleopActive: boolean;
     fps: number;
     url: string;
 }
@@ -33,10 +42,14 @@ export class LiveKitRoboticsClient {
     public identity: string = 'drone-sim';
     public livekitUrl: string = '';
 
+    // Real-Time Teleoperation State (from DataChannel / WebRTC)
+    public teleopAxes: TeleopAxes = { throttle: 0, pitch: 0, roll: 0, yaw: 0 };
+    public lastTeleopTimestamp: number = 0;
+
     private mainCanvas: HTMLCanvasElement | null = null;
     private videoTrack: MediaStreamTrack | null = null;
-    private isStreamingVideo: boolean = true;
     private packetsSent: number = 0;
+    private packetsReceived: number = 0;
     private lastRttMs: number = 0;
     private detectionsCount: number = 0;
     private latestDetections: VisionDetection[] = [];
@@ -48,38 +61,86 @@ export class LiveKitRoboticsClient {
     // Callbacks
     public onAiAnnotations: ((detections: VisionDetection[], width: number, height: number) => void) | null = null;
     public onRemoteCommand: ((command: any) => void) | null = null;
+    public onTeleopAxes: ((axes: TeleopAxes) => void) | null = null;
     public onStatusChange: ((status: string) => void) | null = null;
+
+    // Registered RPC Handlers for LiveKit Robotics RPC
+    private registeredRpcHandlers: Map<string, (params: any) => Promise<any> | any> = new Map();
 
     constructor() {
         console.log('[LiveKit Robotics] Initializing client...');
     }
 
-    public async connect(canvas: HTMLCanvasElement): Promise<boolean> {
+    public isTeleoperating(): boolean {
+        return (performance.now() - this.lastTeleopTimestamp) < 1200;
+    }
+
+    /**
+     * Registers a remote procedure call (RPC) method exposed to remote clients/Jupyter
+     */
+    public registerRpc(methodName: string, handler: (params: any) => Promise<any> | any): void {
+        this.registeredRpcHandlers.set(methodName, handler);
+        if (this.room && this.room.localParticipant) {
+            try {
+                this.room.localParticipant.registerRpcMethod(methodName, async (rpcData: any) => {
+                    try {
+                        let params = {};
+                        if (rpcData.payload) {
+                            try {
+                                params = JSON.parse(rpcData.payload);
+                            } catch {
+                                params = { raw: rpcData.payload };
+                            }
+                        }
+                        const result = await handler(params);
+                        return JSON.stringify(result || { ok: true });
+                    } catch (err: any) {
+                        return JSON.stringify({ error: err.message || String(err) });
+                    }
+                });
+                console.log(`[LiveKit Robotics RPC] Registered method: ${methodName}`);
+            } catch (err) {
+                console.warn(`[LiveKit Robotics RPC] Failed to register method ${methodName}:`, err);
+            }
+        }
+    }
+
+    public async connect(canvas: HTMLCanvasElement, customUrl?: string, customToken?: string): Promise<boolean> {
         this.mainCanvas = canvas;
         this.setStatus('connecting');
 
         try {
-            // 1. Fetch JWT Access Token from Backend 1
-            const apiHost = window.location.port === '5173'
-                ? `${window.location.hostname || 'localhost'}:3001`
-                : (window.location.host || 'localhost:3001');
-            const apiProtocol = window.location.protocol;
-            const tokenUrl = `${apiProtocol}//${apiHost}/api/v1/livekit/token?identity=drone-sim&room=drone`;
+            let token = customToken;
+            let targetRoom = 'drone';
+            let targetIdentity = 'drone-sim';
 
-            console.log(`[LiveKit Robotics] Requesting token from ${tokenUrl}...`);
-            const res = await fetch(tokenUrl);
-            if (!res.ok) {
-                throw new Error(`Token fetch failed: ${res.status} ${res.statusText}`);
+            if (!token) {
+                // 1. Fetch JWT Access Token from Backend 1
+                const apiHost = window.location.port === '5173'
+                    ? `${window.location.hostname || 'localhost'}:3001`
+                    : (window.location.host || 'localhost:3001');
+                const apiProtocol = window.location.protocol;
+                const tokenUrl = `${apiProtocol}//${apiHost}/api/v1/livekit/token?identity=drone-sim&room=drone`;
+
+                console.log(`[LiveKit Robotics] Requesting token from ${tokenUrl}...`);
+                const res = await fetch(tokenUrl);
+                if (!res.ok) {
+                    throw new Error(`Token fetch failed: ${res.status} ${res.statusText}`);
+                }
+
+                const data = await res.json();
+                token = data.token;
+                targetRoom = data.room || 'drone';
+                targetIdentity = data.identity || 'drone-sim';
             }
 
-            const data = await res.json();
-            const token = data.token;
-            this.roomName = data.room || 'drone';
-            this.identity = data.identity || 'drone-sim';
+            this.roomName = targetRoom;
+            this.identity = targetIdentity;
 
             // Determine appropriate LiveKit WebSocket URL
-            // Default to port 7880 on current host, or data.url
-            if (window.location.protocol === 'https:' && window.location.hostname === 'game.local') {
+            if (customUrl) {
+                this.livekitUrl = customUrl;
+            } else if (window.location.protocol === 'https:' && window.location.hostname === 'game.local') {
                 this.livekitUrl = `wss://${window.location.host}/rtc`;
             } else {
                 const lkHost = window.location.hostname || 'localhost';
@@ -98,11 +159,14 @@ export class LiveKitRoboticsClient {
             this.setupRoomEvents();
 
             // 4. Connect to SFU
-            await this.room.connect(this.livekitUrl, token);
+            await this.room.connect(this.livekitUrl, token!);
             console.log(`[LiveKit Robotics] Connected to LiveKit SFU room: ${this.roomName}`);
             this.setStatus('connected');
 
-            // 5. Publish Drone Camera Stream (Robotics FPV Track)
+            // 5. Re-register any pre-registered RPC handlers on localParticipant
+            this.rebindRpcHandlers();
+
+            // 6. Publish Drone Camera Stream (Robotics FPV Track)
             await this.publishDroneCamera();
 
             return true;
@@ -110,6 +174,33 @@ export class LiveKitRoboticsClient {
             console.warn('[LiveKit Robotics] Connection notice:', err.message || err);
             this.setStatus('error');
             return false;
+        }
+    }
+
+    private rebindRpcHandlers(): void {
+        if (!this.room || !this.room.localParticipant) return;
+        for (const [methodName, handler] of this.registeredRpcHandlers.entries()) {
+            try {
+                this.room.localParticipant.registerRpcMethod(methodName, async (rpcData: any) => {
+                    try {
+                        let params = {};
+                        if (rpcData.payload) {
+                            try {
+                                params = JSON.parse(rpcData.payload);
+                            } catch {
+                                params = { raw: rpcData.payload };
+                            }
+                        }
+                        const result = await handler(params);
+                        return JSON.stringify(result || { ok: true });
+                    } catch (err: any) {
+                        return JSON.stringify({ error: err.message || String(err) });
+                    }
+                });
+                console.log(`[LiveKit Robotics RPC] Bound method: ${methodName}`);
+            } catch (err) {
+                console.warn(`[LiveKit Robotics RPC] Error binding method ${methodName}:`, err);
+            }
         }
     }
 
@@ -136,13 +227,47 @@ export class LiveKitRoboticsClient {
             this.setStatus('streaming');
         });
 
-        // Robotics Data Channel: Receive AI Vision Annotations & Teleoperation Commands
+        // Robotics Data Channel: Receive AI Vision Annotations, Continuous Teleoperation Axes & Commands
         this.room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant, kind, topic) => {
+            this.packetsReceived++;
             try {
                 const text = this.decoder.decode(payload);
                 const msg = JSON.parse(text);
 
-                if (msg.type === 'ai:vision_annotations') {
+                // 1. Continuous Teleoperation Control (Sub-50ms Joystick/Axis flight inputs)
+                if (topic === 'teleop' || msg.type === 'teleop:control' || msg.axes) {
+                    const axes: TeleopAxes = {
+                        throttle: Number(msg.axes?.throttle ?? msg.throttle ?? 0),
+                        pitch: Number(msg.axes?.pitch ?? msg.pitch ?? 0),
+                        roll: Number(msg.axes?.roll ?? msg.roll ?? 0),
+                        yaw: Number(msg.axes?.yaw ?? msg.yaw ?? 0),
+                    };
+                    // Support standard ROS Twist linear/angular conventions if provided
+                    if (msg.linear || msg.angular) {
+                        axes.throttle = Number(msg.linear?.z ?? axes.throttle);
+                        axes.pitch = Number(msg.linear?.x ?? axes.pitch);
+                        axes.roll = Number(msg.linear?.y ?? axes.roll);
+                        axes.yaw = Number(msg.angular?.z ?? axes.yaw);
+                    }
+                    this.teleopAxes = axes;
+                    this.lastTeleopTimestamp = performance.now();
+                    if (this.onTeleopAxes) {
+                        this.onTeleopAxes(axes);
+                    }
+                    return;
+                }
+
+                // 2. Discrete Teleoperation Commands / State Toggles
+                if (msg.type === 'teleop:command' || msg.type === 'server:command') {
+                    console.log('[LiveKit Robotics] Received teleop command via DataChannel:', msg);
+                    if (this.onRemoteCommand) {
+                        this.onRemoteCommand(msg.command || msg);
+                    }
+                    return;
+                }
+
+                // 3. AI Computer Vision Annotations (Bounding Boxes from Vision / Kaggle model)
+                if (msg.type === 'ai:vision_annotations' || topic === 'vision') {
                     const ann = msg as VisionAnnotationsPayload;
                     this.latestDetections = ann.detections || [];
                     this.detectionsCount = this.latestDetections.length;
@@ -151,14 +276,10 @@ export class LiveKitRoboticsClient {
                     if (this.onAiAnnotations) {
                         this.onAiAnnotations(this.latestDetections, this.detectionSourceDims.width, this.detectionSourceDims.height);
                     }
-                } else if (msg.type === 'teleop:command' || msg.type === 'server:command') {
-                    console.log('[LiveKit Robotics] Received teleop command via DataChannel:', msg);
-                    if (this.onRemoteCommand) {
-                        this.onRemoteCommand(msg.command || msg);
-                    }
+                    return;
                 }
             } catch (e) {
-                // Ignore malformed packets
+                // Non-blocking for high-frequency packets
             }
         });
     }
@@ -190,11 +311,12 @@ export class LiveKitRoboticsClient {
             }
             this.videoTrack = track;
 
-            console.log('[LiveKit Robotics] Publishing WebRTC canvas video track...');
+            console.log('[LiveKit Robotics] Publishing WebRTC canvas video track with maintain-framerate...');
             await this.room.localParticipant.publishTrack(track, {
                 name: 'drone-fpv',
                 source: Track.Source.Camera,
                 simulcast: false,
+                degradationPreference: 'maintain-framerate',
             });
 
             this.setStatus('streaming');
@@ -221,7 +343,7 @@ export class LiveKitRoboticsClient {
             };
             const bytes = this.encoder.encode(JSON.stringify(payload));
             this.room.localParticipant.publishData(bytes, {
-                reliable: false, // lossy/low-latency for high-rate telemetry
+                reliable: false, // lossy/low-latency for high-rate continuous telemetry
                 topic: 'telemetry',
             });
             this.packetsSent++;
@@ -271,7 +393,9 @@ export class LiveKitRoboticsClient {
             rttMs: this.lastRttMs,
             videoTrackPublished: this.videoTrack !== null,
             packetsSent: this.packetsSent,
+            packetsReceived: this.packetsReceived,
             detectionsCount: this.detectionsCount,
+            teleopActive: this.isTeleoperating(),
             fps: 30,
             url: this.livekitUrl,
         };

@@ -455,13 +455,96 @@ async function bootstrap() {
         input.onCameraToggle();
     };
 
-    // 5. Connect to LiveKit Robotics SFU (WebRTC Video Streaming & Low-Latency Data Channels)
+    // 5. Connect to LiveKit Robotics SFU (WebRTC Video Streaming, Low-Latency Data Channels & RPC)
     livekit.connect(canvas).then(ok => {
         if (ok) {
             missionManager.showNotification("LIVEKIT ROBOTICS: STREAMING FPV [WEBRTC]");
         }
     }).catch(err => {
         console.warn("[LiveKit] Init notice:", err);
+    });
+
+    // Register Full Suite of LiveKit Robotics RPC Methods (for Jupyter / Kaggle / Remote Operators)
+    livekit.registerRpc('teleop.takeoff', async (params) => {
+        physics.arm(true);
+        physics.setMode('AUTOPILOT');
+        const p = physics.getPosition();
+        const alt = Number(params?.altitude || 15);
+        physics.setAutopilotTarget(p[0], p[1] + alt, p[2]);
+        missionManager.showNotification(`LIVEKIT RPC: TAKEOFF TO ${alt}M`);
+        return { ok: true, altitude: alt };
+    });
+
+    livekit.registerRpc('teleop.land', async () => {
+        physics.setMode('AUTOPILOT');
+        const p = physics.getPosition();
+        physics.setAutopilotTarget(p[0], currentMapDef.groundElevation + 0.1, p[2]);
+        missionManager.showNotification("LIVEKIT RPC: AUTOLAND INITIATED");
+        return { ok: true };
+    });
+
+    livekit.registerRpc('teleop.emergency_stop', async () => {
+        physics.arm(false);
+        missionManager.showNotification("LIVEKIT RPC: EMERGENCY MOTOR CUT");
+        return { ok: true };
+    });
+
+    livekit.registerRpc('teleop.arm', async (params) => {
+        const armState = params?.armed !== false;
+        physics.arm(armState);
+        missionManager.showNotification(`LIVEKIT RPC: ${armState ? 'ARMED' : 'DISARMED'}`);
+        return { ok: true, armed: armState };
+    });
+
+    livekit.registerRpc('teleop.set_speed_mode', async (params) => {
+        const mode = (params?.mode || 'CRUISE').toUpperCase() as SpeedMode;
+        if (speedModes.includes(mode)) {
+            speedModeIndex = speedModes.indexOf(mode);
+            soundManager.playSpeedModeChime(mode);
+            missionManager.showNotification(`LIVEKIT RPC: SPEED ${mode}`);
+            return { ok: true, mode };
+        }
+        return { ok: false, error: 'Invalid speed mode' };
+    });
+
+    livekit.registerRpc('teleop.set_flight_mode', async (params) => {
+        const mode = params?.mode === 'AUTOPILOT' ? 'AUTOPILOT' : 'MANUAL';
+        physics.setMode(mode);
+        missionManager.showNotification(`LIVEKIT RPC: MODE ${mode}`);
+        return { ok: true, mode };
+    });
+
+    livekit.registerRpc('teleop.deploy_next_drone', async () => {
+        handleRecoverOrRestart();
+        return { ok: true, dronesRemaining: missionManager.dronesRemaining };
+    });
+
+    livekit.registerRpc('teleop.restart_mission', async () => {
+        restartMission();
+        return { ok: true, totalTargets: missionManager.totalTargets, totalDrones: missionManager.totalDrones };
+    });
+
+    livekit.registerRpc('teleop.select_map', async (params) => {
+        const mapId = params?.id || params?.mapId;
+        const mapDef = MAP_CATALOG.find(m => m.id === mapId);
+        if (mapDef) {
+            await switchMap(mapDef);
+            return { ok: true, mapId: mapDef.id, mapName: mapDef.name };
+        }
+        return { ok: false, error: `Map '${mapId}' not found` };
+    });
+
+    livekit.registerRpc('teleop.get_state', async () => {
+        return {
+            armed: physics.isArmed(),
+            mode: physics.getMode(),
+            speedMode: speedModes[speedModeIndex],
+            position: physics.getPosition(),
+            rotation: physics.getRotation(),
+            velocity: physics.getVelocity(),
+            mission: missionManager.getStats(),
+            aliveHostiles: entityManager.getAliveHostileTargets().length,
+        };
     });
 
     livekit.onRemoteCommand = (cmd: any) => {
@@ -485,12 +568,12 @@ async function bootstrap() {
         }
     };
 
-    hud.onLiveKitToggle = () => {
+    hud.onLiveKitToggle = (customUrl?: string) => {
         if (livekit.status === 'streaming' || livekit.status === 'connected') {
             livekit.disconnect();
             missionManager.showNotification("LIVEKIT STREAM DISCONNECTED");
         } else {
-            livekit.connect(canvas);
+            livekit.connect(canvas, customUrl);
             missionManager.showNotification("CONNECTING TO LIVEKIT...");
         }
     };
@@ -550,8 +633,24 @@ async function bootstrap() {
         // Input update & Mouse Look / Zoom
         input.update();
 
-        // Auto-arm on any flight input (only if not crashed)
-        if (input.hasAnyFlightInput() && !physics.isArmed() && !isCrashed) {
+        // Check if remote teleoperator from LiveKit DataChannel is actively steering
+        const isRemoteTeleoperating = livekit.isTeleoperating();
+        let inThrottle = input.throttle;
+        let inPitch = input.pitch;
+        let inRoll = input.roll;
+        let inYaw = input.yaw;
+
+        if (isRemoteTeleoperating) {
+            // Apply remote continuous teleoperation axes directly from LiveKit
+            inThrottle = livekit.teleopAxes.throttle;
+            inPitch = livekit.teleopAxes.pitch;
+            inRoll = livekit.teleopAxes.roll;
+            inYaw = livekit.teleopAxes.yaw;
+
+            if (!physics.isArmed() && !isCrashed && (Math.abs(inThrottle) > 0.05 || Math.abs(inPitch) > 0.05 || Math.abs(inRoll) > 0.05)) {
+                physics.arm(true);
+            }
+        } else if (input.hasAnyFlightInput() && !physics.isArmed() && !isCrashed) {
             physics.arm(true);
         }
 
@@ -559,9 +658,9 @@ async function bootstrap() {
         const zoom = input.consumeMouseZoom();
         camera.applyMouseDelta(mouse.dx, mouse.dy, zoom);
 
-        // Q / E: Smoothly turn flight heading & camera view left/right
-        if (input.yaw !== 0 && !isCrashed) {
-            camera.mouseOrbitYaw += input.yaw * 0.035;
+        // Turn flight heading & camera view left/right (supports both local Q/E and remote LiveKit yaw)
+        if (inYaw !== 0 && !isCrashed) {
+            camera.mouseOrbitYaw += inYaw * 0.035;
         }
 
         // Auto-deploy next drone after 2.2s detonation inspection when mission is active and drones remain
@@ -582,7 +681,7 @@ async function bootstrap() {
         // Direct master heading (in degrees) from camera mouse orientation
         const masterHeadingDeg = camera.mouseOrbitYaw * (180.0 / Math.PI);
         if (!isCrashed) {
-            physics.setManualInput(input.throttle, input.pitch, input.roll, masterHeadingDeg);
+            physics.setManualInput(inThrottle, inPitch, inRoll, masterHeadingDeg);
         } else {
             physics.setManualInput(0, 0, 0, masterHeadingDeg);
         }
@@ -608,18 +707,18 @@ async function bootstrap() {
                 const rgtZ = -Math.sin(masterYawRad);
 
                 // Equal authority for forward/back (pitch) and strafe left/right (roll)
-                let inP = input.pitch;
-                let inR = input.roll;
-                const inputMag = Math.hypot(inP, inR);
+                let subInP = inPitch;
+                let subInR = inRoll;
+                const inputMag = Math.hypot(subInP, subInR);
                 if (inputMag > 1.0) {
-                    inP /= inputMag;
-                    inR /= inputMag;
+                    subInP /= inputMag;
+                    subInR /= inputMag;
                 }
 
-                // 1. Horizontal Flight (WASD + Speed Mode Scaling)
+                // 1. Horizontal Flight (WASD + Remote Teleop + Speed Mode Scaling)
                 if (inputMag > 0.02) {
-                    const targetVx = (fwdX * inP + rgtX * inR) * profile.maxSpeed;
-                    const targetVz = (fwdZ * inP + rgtZ * inR) * profile.maxSpeed;
+                    const targetVx = (fwdX * subInP + rgtX * subInR) * profile.maxSpeed;
+                    const targetVz = (fwdZ * subInP + rgtZ * subInR) * profile.maxSpeed;
                     const blendH = Math.min(1.0, physicsDt * profile.accelRate);
                     subVel[0] += (targetVx - subVel[0]) * blendH;
                     subVel[2] += (targetVz - subVel[2]) * blendH;
@@ -634,13 +733,13 @@ async function bootstrap() {
                     }
                 }
 
-                // 2. Vertical Flight (Shift / Space for climb, Ctrl / C for descent)
-                if (input.throttle > 0.05) {
-                    const targetVy = profile.climbSpeed * input.throttle;
+                // 2. Vertical Flight (Shift / Space for climb, Ctrl / C for descent, or remote teleop)
+                if (inThrottle > 0.05) {
+                    const targetVy = profile.climbSpeed * inThrottle;
                     const blendClimb = Math.min(1.0, physicsDt * 18.0);
                     subVel[1] += (targetVy - subVel[1]) * blendClimb;
-                } else if (input.throttle < -0.05) {
-                    const targetVy = -profile.descentSpeed * Math.abs(input.throttle);
+                } else if (inThrottle < -0.05) {
+                    const targetVy = -profile.descentSpeed * Math.abs(inThrottle);
                     const blendDescend = Math.min(1.0, physicsDt * 18.0);
                     subVel[1] += (targetVy - subVel[1]) * blendDescend;
                 } else {
@@ -656,10 +755,10 @@ async function bootstrap() {
                 subPos[2] = prevPos[2] + subVel[2] * physicsDt;
 
                 // 3. Dynamic Visual Banking & Pitch Tilt
-                const targetPitch = inP * profile.maxTiltDeg;
-                let targetRoll = inR * profile.maxTiltDeg;
-                if (input.yaw !== 0) {
-                    targetRoll += input.yaw * 10.0;
+                const targetPitch = subInP * profile.maxTiltDeg;
+                let targetRoll = subInR * profile.maxTiltDeg;
+                if (inYaw !== 0) {
+                    targetRoll += inYaw * 10.0;
                 }
                 const blendTilt = Math.min(1.0, physicsDt * 22.0);
                 currentRollDeg += (targetRoll - currentRollDeg) * blendTilt;

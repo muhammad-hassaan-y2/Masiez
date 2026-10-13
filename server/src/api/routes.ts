@@ -44,6 +44,14 @@ export function createRoutes(telemetryStore: any, droneCommands: any, droneState
   router.get('/drone/livekit/token', generateLiveKitToken);
   router.post('/drone/livekit/token', generateLiveKitToken);
 
+  router.get('/livekit/config', (req, res) => {
+    res.json({
+      url: CONFIG.livekitUrl,
+      room: CONFIG.livekitRoom,
+      apiKey: CONFIG.livekitApiKey,
+    });
+  });
+
   router.get('/drone/telemetry', (req, res) => {
     res.json(telemetryStore.getLatest() || {});
   });
