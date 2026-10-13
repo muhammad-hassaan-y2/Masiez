@@ -11,7 +11,6 @@ export class InputManager {
     public mouseDeltaY: number = 0;
     public isPointerLocked: boolean = false;
     public isMouseDown: boolean = false;
-    public isShooting: boolean = false;
     public mouseZoom: number = 0;
 
     public onArmToggle: () => void = () => {};
@@ -21,7 +20,6 @@ export class InputManager {
     public onSpeedToggle: () => void = () => {};
     public onMuteToggle: () => void = () => {};
     public onUserMenuToggle: () => void = () => {};
-    public onShoot: () => void = () => {};
     public onScopeToggle: () => void = () => {};
     public onScopeGearChange: (forward: boolean) => void = () => {};
     public onLockTarget: () => void = () => {};
@@ -65,9 +63,6 @@ export class InputManager {
                 this.onScopeGearChange(true);
             } else if (e.code === 'KeyT') {
                 this.onLockTarget();
-            } else if (e.code === 'KeyF' || e.code === 'KeyJ') {
-                this.isShooting = true;
-                this.onShoot();
             } else if (e.code === KEY_BINDINGS.emergencyStop) {
                 this.onEmergencyStop();
             }
@@ -75,11 +70,6 @@ export class InputManager {
 
         window.addEventListener('keyup', (e) => {
             this.keys[e.code] = false;
-            if (e.code === 'KeyF' || e.code === 'KeyJ') {
-                if (!this.keys['KeyF'] && !this.keys['KeyJ'] && !this.isMouseDown) {
-                    this.isShooting = false;
-                }
-            }
         });
 
         // Mouse Pointer Lock & Drag Steering
@@ -108,29 +98,22 @@ export class InputManager {
                 lastY = e.clientY;
 
                 if (e.button === 0 || e.button === undefined) {
-                    this.isShooting = true;
-                    this.onShoot();
                     if (!this.isPointerLocked) {
                         try {
                             canvas.requestPointerLock();
                         } catch (err) {}
                     }
                 } else if (e.button === 2) {
-                    // Right-Click: Toggle Aim Down Sights / Tactical Scope
+                    // Right-Click: Toggle Optical Zoom Scope
                     this.onScopeToggle();
                 } else if (e.button === 1) {
-                    // Middle-Click: Lock on or cycle nearest target
+                    // Middle-Click: Lock on or cycle nearest hostile target
                     this.onLockTarget();
                 }
             }
         });
 
-        window.addEventListener('mouseup', (e) => {
-            if (e.button === 0 || e.button === undefined) {
-                if (!this.keys['KeyF'] && !this.keys['KeyJ']) {
-                    this.isShooting = false;
-                }
-            }
+        window.addEventListener('mouseup', () => {
             this.isMouseDown = false;
             lastX = 0;
             lastY = 0;
@@ -159,7 +142,6 @@ export class InputManager {
 
         window.addEventListener('mouseleave', () => {
             this.isMouseDown = false;
-            this.isShooting = false;
             lastX = 0;
             lastY = 0;
         });

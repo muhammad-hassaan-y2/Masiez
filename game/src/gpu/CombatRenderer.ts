@@ -189,8 +189,8 @@ export class CombatRenderer {
             if (proj.kind === 'TANK_SHELL' || proj.kind === 'ARTILLERY_SHELL' || proj.kind === 'RPG_ROCKET') {
                 addBox(proj.pos[0], proj.pos[1], proj.pos[2], 0.30, 0.30, 1.6, projYaw, [1.0, 0.65, 0.15, 1.0], 1.0);
             } else {
-                const boltLen = proj.isRailgun ? 3.6 : (proj.kind === 'TRACER' ? 2.2 : 1.8);
-                const thickness = proj.isRailgun ? 0.22 : (proj.kind === 'TRACER' ? 0.10 : 0.12);
+                const boltLen = proj.kind === 'TRACER' ? 2.2 : 1.8;
+                const thickness = proj.kind === 'TRACER' ? 0.10 : 0.12;
                 const p0x = proj.pos[0] - normV[0] * boltLen;
                 const p0y = proj.pos[1] - normV[1] * boltLen;
                 const p0z = proj.pos[2] - normV[2] * boltLen;

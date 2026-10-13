@@ -8,7 +8,7 @@ import { CityMapRenderer, MAP_CATALOG, MapDefinition } from './gpu/CityMapRender
 import { SoundManager } from './gameplay/SoundManager';
 import { MissionManager } from './gameplay/MissionManager';
 import { CollisionSystem } from './gameplay/CollisionSystem';
-import { EntityManager } from './gameplay/EntityManager';
+import { EntityManager, BaseEntity } from './gameplay/EntityManager';
 import { WeaponSystem } from './gameplay/WeaponSystem';
 import { CombatRenderer } from './gpu/CombatRenderer';
 import { Camera } from './scene/Camera';
@@ -20,7 +20,7 @@ import { Telemetry, DroneFlightState, FlightMode, GPSFixType, SensorStatus } fro
 type SpeedMode = 'CRUISE' | 'SPORT' | 'TURBO';
 
 async function bootstrap() {
-    console.log("=== Initializing Masiez C++ / WebGPU Drone Simulation ===");
+    console.log("=== Initializing Masiez C++ / WebGPU Kamikaze FPV Drone Simulation ===");
 
     const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;
     if (!canvas) throw new Error("renderCanvas element not found");
@@ -67,7 +67,7 @@ async function bootstrap() {
     const cityMapRenderer = new CityMapRenderer(gpu);
     await cityMapRenderer.init();
 
-    // 4. Combat Systems: Building Collisions, Moving Entities & Weapons
+    // 4. Combat Systems: Building Collisions, Moving Entities & Kamikaze Warhead System
     const collisionSystem = new CollisionSystem();
     const entityManager = new EntityManager();
     const weaponSystem = new WeaponSystem();
@@ -104,7 +104,7 @@ async function bootstrap() {
             maxTiltDeg: 22.0,    // Stable tilt
         },
         'SPORT': {
-            maxSpeed: 36.0,      // ~130 km/h: High-performance tactical fighter dogfighting
+            maxSpeed: 36.0,      // ~130 km/h: High-performance tactical attack dive
             climbSpeed: 16.0,    // Rapid evasive climb
             descentSpeed: 11.0,  // Fast dive descent
             accelRate: 25.0,     // Punchy instant acceleration
@@ -112,9 +112,9 @@ async function bootstrap() {
             maxTiltDeg: 32.0,    // Aggressive racing banking
         },
         'TURBO': {
-            maxSpeed: 55.0,      // ~198 km/h: Hypersonic dash across vast maps
+            maxSpeed: 55.0,      // ~198 km/h: Terminal kamikaze sprint across vast maps
             climbSpeed: 26.0,    // Rocket-like vertical burst
-            descentSpeed: 16.0,  // High-speed descent
+            descentSpeed: 16.0,  // High-speed terminal dive
             accelRate: 30.0,     // Hypersonic racer throttle
             brakeRate: 24.0,     // Authoritative air-brakes
             maxTiltDeg: 42.0,    // Extreme high-g racing tilt
@@ -124,65 +124,130 @@ async function bootstrap() {
     let currentRollDeg = 0;
     let currentPitchDeg = 0;
 
-    // Crash Detection & Recovery State
+    // Kamikaze Detonation & Multi-Drone Fleet State
+    const DEFAULT_DRONE_FLEET = 8;
     let isCrashed = false;
     let crashReason = "";
     let crashTime = 0;
 
-    function triggerCrash(reason: string, hitPos?: [number, number, number]) {
+    function triggerKamikazeDetonation(
+        reason: string,
+        hitPos?: [number, number, number],
+        directHitEntity?: BaseEntity | null
+    ) {
         if (isCrashed) return;
         isCrashed = true;
         crashReason = reason;
         crashTime = performance.now();
         physics.arm(false);
 
-        soundManager.playCrash();
-
         const crashPt = hitPos || physics.getPosition();
-        weaponSystem.spawnImpactParticles(crashPt, [0, 1, 0], [1.0, 0.35, 0.05, 1.0], 50);
-        weaponSystem.spawnImpactParticles(crashPt, [0, 1, 0], [0.8, 0.8, 0.8, 1.0], 35);
-        weaponSystem.spawnImpactParticles(crashPt, [0, 1, 0], [1.0, 0.85, 0.2, 1.0], 30);
+
+        // Detonate onboard explosive warhead & evaluate blast radius against hostile targets
+        const destroyedTargets = weaponSystem.detonateWarhead(
+            crashPt,
+            entityManager,
+            soundManager,
+            directHitEntity
+        );
+
+        // Update kamikaze mission scoring & remaining drone count
+        const stats = missionManager.recordKamikazeStrike(
+            destroyedTargets,
+            entityManager.getDestroyedHostileCount(),
+            reason
+        );
+
+        if (destroyedTargets.length > 0) {
+            weaponSystem.hitMarkerTimer = 1.6;
+            weaponSystem.hitMarkerText = `💥 TARGET HIT (+${destroyedTargets.length * 1000} PTS) — ${stats.targetsHit}/${stats.totalTargets} DESTROYED`;
+        } else {
+            weaponSystem.hitMarkerTimer = 1.0;
+            weaponSystem.hitMarkerText = `WARHEAD DETONATED — NO TARGET HIT`;
+        }
+
+        // Publish reliable strike outcome over LiveKit Robotics DataChannel
+        livekit.publishStrikeEvent({
+            reason,
+            hitTarget: destroyedTargets.length > 0,
+            destroyedTargets: destroyedTargets.map(t => t.roleName),
+            mission: stats,
+        });
 
         const curVel = physics.getVelocity();
-        physics.setVelocity(curVel[0] * 0.15, Math.min(curVel[1], -1.5), curVel[2] * 0.15);
+        physics.setVelocity(curVel[0] * 0.12, Math.min(curVel[1], -1.5), curVel[2] * 0.12);
         currentRollDeg += (Math.random() - 0.5) * 80;
         currentPitchDeg += (Math.random() - 0.5) * 80;
 
-        console.warn(`[CRASH] Drone crashed: ${reason}`);
-        missionManager.showNotification(`CRITICAL FAILURE: ${reason.toUpperCase()}`);
+        console.log(
+            `[KAMIKAZE DETONATION] Reason: ${reason} | Hit: ${destroyedTargets.length} target(s) | ` +
+            `Targets: ${stats.targetsHit}/${stats.totalTargets} | Drones Left: ${stats.dronesRemaining}/${stats.totalDrones}`
+        );
     }
 
-    function recoverDrone() {
+    function deployNextDrone() {
         isCrashed = false;
         crashReason = "";
-        physics.arm(false);
         physics.setMode('MANUAL');
         physics.resetPosition(currentMapDef.spawnPos[0], currentMapDef.spawnPos[1], currentMapDef.spawnPos[2]);
         physics.setVelocity(0, 0, 0);
         physics.setRotation(0, 0, 0);
+        physics.arm(true);
         currentRollDeg = 0;
         currentPitchDeg = 0;
         camera.mouseOrbitYaw = 0;
         camera.mouseOrbitPitch = 0;
+        weaponSystem.lockedEntity = null;
         soundManager.playTargetAcquired();
-        missionManager.showNotification("DRONE RECOVERED & READY AT BASE");
-        console.log("[Drone] Airframe recovered & restored at base");
+        const droneNum = Math.min(
+            missionManager.totalDrones,
+            missionManager.totalDrones - missionManager.dronesRemaining + 1
+        );
+        missionManager.showNotification(
+            `🚀 FPV DRONE #${droneNum} ARMED (${missionManager.dronesRemaining}/${missionManager.totalDrones} LEFT) — TARGETS: ${missionManager.targetsHit}/${missionManager.totalTargets}`
+        );
+        console.log(`[Drone] Deployed FPV Drone #${droneNum} at base (${missionManager.dronesRemaining} remaining)`);
+    }
+
+    function restartMission() {
+        if (currentMapDef.id === 'airfield') {
+            entityManager.initAirfieldEntities();
+        } else {
+            entityManager.initMapEntities(currentMapDef.id, currentMapDef.spawnPos, currentMapDef.groundElevation);
+        }
+        missionManager.startMission(entityManager.getTotalHostileCount(), DEFAULT_DRONE_FLEET);
+        deployNextDrone();
+        missionManager.showNotification(
+            `🎯 NEW MISSION: DESTROY ${missionManager.totalTargets} HOSTILE TARGETS (${missionManager.totalDrones} KAMIKAZE DRONES)`
+        );
+    }
+
+    function handleRecoverOrRestart() {
+        if (
+            missionManager.missionStatus === 'SUCCESS' ||
+            missionManager.missionStatus === 'FAILED' ||
+            missionManager.dronesRemaining <= 0
+        ) {
+            restartMission();
+        } else {
+            deployNextDrone();
+        }
     }
 
     // Active Map Management: Start directly on Tactical Airfield Runway (Original First Map)
     let currentMapDef: MapDefinition = MAP_CATALOG[0];
     hud.setActiveMapButton(currentMapDef.id);
-    missionManager.loadCourse(currentMapDef.id);
     physics.setGroundOffset(currentMapDef.groundElevation);
     physics.resetPosition(currentMapDef.spawnPos[0], currentMapDef.spawnPos[1], currentMapDef.spawnPos[2]);
     camera.baseDistance = currentMapDef.camDistance;
     camera.currentGroundElevation = currentMapDef.groundElevation;
     physics.clearHeightmap();
 
-    // Initialize colliders & entities immediately for Map 1 (Tactical Airfield)
+    // Initialize colliders, entities & kamikaze mission for Map 1 (Tactical Airfield)
     collisionSystem.clearColliders();
     collisionSystem.initAirfieldColliders();
     entityManager.initAirfieldEntities();
+    missionManager.startMission(entityManager.getTotalHostileCount(), DEFAULT_DRONE_FLEET);
 
     // Stream map GLB if applicable
     if (currentMapDef.url) {
@@ -243,11 +308,7 @@ async function bootstrap() {
         camera.mouseOrbitPitch = 0;
         camera.baseDistance = mapDef.camDistance;
         camera.currentGroundElevation = mapDef.groundElevation;
-
-        // Load new course
-        missionManager.loadCourse(mapDef.id);
-        soundManager.playTargetAcquired();
-        missionManager.showNotification(`SECTOR DEPLOYED: ${mapDef.name.toUpperCase()}`);
+        weaponSystem.lockedEntity = null;
 
         // Populate solid building colliders & moving entities for this map
         collisionSystem.clearColliders();
@@ -265,31 +326,20 @@ async function bootstrap() {
             entityManager.initMapEntities(mapDef.id, mapDef.spawnPos, mapDef.groundElevation);
         }
 
+        // Start fresh kamikaze mission for this sector
+        missionManager.startMission(entityManager.getTotalHostileCount(), DEFAULT_DRONE_FLEET);
+        soundManager.playTargetAcquired();
+        missionManager.showNotification(
+            `SECTOR DEPLOYED: ${mapDef.name.toUpperCase()} — DESTROY ${missionManager.totalTargets} TARGETS (${missionManager.totalDrones} DRONES)`
+        );
+
         console.log(`[Game] Switched to map: ${mapDef.name} (${collisionSystem['aabbs']?.length || 0} AABB colliders, ${collisionSystem['cylinders']?.length || 0} cylinders)`);
     }
 
     // Input Handlers
-    input.onShoot = () => {
-        if (isCrashed) return;
-        const curPos = physics.getPosition();
-        const curRot = physics.getRotation();
-        const curVel = physics.getVelocity();
-        weaponSystem.fire(
-            curPos,
-            curRot,
-            curVel,
-            camera,
-            collisionSystem,
-            entityManager,
-            soundManager,
-            performance.now() / 1000.0,
-            currentMapDef.id
-        );
-    };
-
     input.onArmToggle = () => {
         if (isCrashed) {
-            recoverDrone();
+            handleRecoverOrRestart();
             return;
         }
         const nextArmed = !physics.isArmed();
@@ -313,7 +363,7 @@ async function bootstrap() {
 
     input.onSpeedToggle = () => {
         if (isCrashed) {
-            recoverDrone();
+            handleRecoverOrRestart();
             return;
         }
         speedModeIndex = (speedModeIndex + 1) % speedModes.length;
@@ -344,20 +394,20 @@ async function bootstrap() {
         camera.toggleScope();
         input.isScoped = camera.isScoped;
         soundManager.playScopeZoom(camera.scopeGear);
-        missionManager.showNotification(camera.isScoped ? `SCOPE ACTIVE: ${camera.scopeGear}X` : "SCOPE DEACTIVATED");
+        missionManager.showNotification(camera.isScoped ? `OPTICAL ZOOM ACTIVE: ${camera.scopeGear}X` : "OPTICAL ZOOM DEACTIVATED");
     };
 
     input.onScopeGearChange = (forward: boolean) => {
         camera.cycleScopeGear(forward);
         input.isScoped = camera.isScoped;
         soundManager.playScopeZoom(camera.scopeGear);
-        missionManager.showNotification(`SCOPE GEAR: ${camera.scopeGear}X`);
+        missionManager.showNotification(`OPTICAL ZOOM: ${camera.scopeGear}X`);
     };
 
     input.onLockTarget = () => {
         weaponSystem.toggleLock(camera, entityManager, soundManager);
         if (weaponSystem.lockedEntity) {
-            missionManager.showNotification(`TARGET LOCKED: ${weaponSystem.lockedEntity.roleName.toUpperCase()}`);
+            missionManager.showNotification(`KAMIKAZE TARGET LOCKED: ${weaponSystem.lockedEntity.roleName.toUpperCase()}`);
         } else {
             missionManager.showNotification("TARGET LOCK DISENGAGED");
         }
@@ -394,7 +444,11 @@ async function bootstrap() {
     };
 
     hud.onRecoverDrone = () => {
-        recoverDrone();
+        handleRecoverOrRestart();
+    };
+
+    hud.onRestartMission = () => {
+        restartMission();
     };
 
     hud.onCameraToggle = () => {
@@ -424,6 +478,10 @@ async function bootstrap() {
             physics.setAutopilotTarget(p[0], currentMapDef.groundElevation + 0.1, p[2]);
         } else if (cmd.type === 'emergency_stop') {
             physics.arm(false);
+        } else if (cmd.type === 'deploy_next_drone') {
+            handleRecoverOrRestart();
+        } else if (cmd.type === 'restart_mission') {
+            restartMission();
         }
     };
 
@@ -506,19 +564,9 @@ async function bootstrap() {
             camera.mouseOrbitYaw += input.yaw * 0.035;
         }
 
-        // Auto-fire while fire button/key is held down
-        if (input.isShooting && !isCrashed) {
-            weaponSystem.fire(
-                physics.getPosition(),
-                physics.getRotation(),
-                physics.getVelocity(),
-                camera,
-                collisionSystem,
-                entityManager,
-                soundManager,
-                now / 1000.0,
-                currentMapDef.id
-            );
+        // Auto-deploy next drone after 2.2s detonation inspection when mission is active and drones remain
+        if (isCrashed && missionManager.missionStatus === 'ACTIVE' && missionManager.dronesRemaining > 0 && (now - crashTime >= 2200)) {
+            deployNextDrone();
         }
 
         // Emit residual smoke & sparks while airframe is crashed
@@ -637,9 +685,9 @@ async function bootstrap() {
             const minGroundY = groundY + 0.28; // Drone landing clearance buffer
             if (subPos[1] < minGroundY) {
                 subPos[1] = minGroundY;
-                // Severe downward impact or extreme tilt into ground -> CRASH
+                // Severe downward impact or extreme tilt into ground -> Kamikaze Detonation
                 if (!isCrashed && (prevVelY < -4.2 || Math.abs(currentPitchDeg) > 52 || Math.abs(currentRollDeg) > 52)) {
-                    triggerCrash("HIGH-SPEED GROUND IMPACT", [subPos[0], minGroundY, subPos[2]]);
+                    triggerKamikazeDetonation("HIGH-SPEED GROUND IMPACT", [subPos[0], minGroundY, subPos[2]], null);
                 }
                 if (subVel[1] < 0) subVel[1] = 0;
                 // If landed on ground and neutral, stabilize upright
@@ -650,24 +698,24 @@ async function bootstrap() {
                 }
             }
 
-            // 2. Strict Continuous Collision vs Buildings & Structures on EVERY sub-step -> CRASHES ON ANY TOUCH
+            // 2. Strict Continuous Collision vs Buildings & Structures on EVERY sub-step -> DETONATES ON IMPACT
             const col = collisionSystem.resolveDroneCollision(subPos, subVel, 0.45, prevPos, groundY);
             if (col.hit) {
                 if (!isCrashed) {
-                    triggerCrash(col.obstacleName || 'OBSTACLE / STRUCTURE', [subPos[0], subPos[1], subPos[2]]);
+                    triggerKamikazeDetonation(col.obstacleName || 'OBSTACLE / STRUCTURE', [subPos[0], subPos[1], subPos[2]], null);
                 }
             }
 
-            // 3. Collision vs Moving Entities (Tanks and Soldier Battalions)
+            // 3. Collision vs Moving Entities (Hostile Tanks & Soldiers) -> DIRECT KAMIKAZE STRIKE
             if (!isCrashed) {
                 for (const ent of entityManager.entities) {
                     if (!ent.isAlive) continue;
                     const entMinY = ent.pos[1];
                     const entMaxY = ent.pos[1] + ent.height;
-                    if (subPos[1] >= entMinY - 0.35 && subPos[1] <= entMaxY + 0.35) {
+                    if (subPos[1] >= entMinY - 0.45 && subPos[1] <= entMaxY + 0.45) {
                         const dXZ = Math.hypot(subPos[0] - ent.pos[0], subPos[2] - ent.pos[2]);
-                        if (dXZ < 0.45 + ent.radius) {
-                            triggerCrash(ent.roleName.toUpperCase(), [subPos[0], subPos[1], subPos[2]]);
+                        if (dXZ < 0.55 + ent.radius) {
+                            triggerKamikazeDetonation(ent.roleName.toUpperCase(), [subPos[0], subPos[1], subPos[2]], ent);
                             break;
                         }
                     }
@@ -696,7 +744,7 @@ async function bootstrap() {
             warCallbacks
         );
 
-        // 3. Update Drone Weapon System & Battlefield Ordnance (Tank Shells, Tracers, Artillery)
+        // 3. Update Drone Explosive Warhead & Battlefield Ordnance (Tank Shells, Tracers, Artillery)
         weaponSystem.update(
             deltaSec,
             collisionSystem,
@@ -708,7 +756,7 @@ async function bootstrap() {
             pos
         );
 
-        // Check if a Hostile Tank Shell directly hit the player's drone
+        // Check if a Hostile Tank Shell directly struck the player's drone
         if (!isCrashed) {
             for (let i = weaponSystem.projectiles.length - 1; i >= 0; --i) {
                 const pr = weaponSystem.projectiles[i];
@@ -716,7 +764,7 @@ async function bootstrap() {
                     const dDrone = Math.hypot(pr.pos[0] - pos[0], pr.pos[1] - pos[1], pr.pos[2] - pos[2]);
                     if (dDrone < 1.65) {
                         weaponSystem.projectiles.splice(i, 1);
-                        triggerCrash(`HIT BY HOSTILE ${pr.kind === 'SAM_MISSILE' ? 'MISSILE' : 'TANK SHELL'}`, [pos[0], pos[1], pos[2]]);
+                        triggerKamikazeDetonation(`INTERCEPTED BY HOSTILE ${pr.kind === 'SAM_MISSILE' ? 'MISSILE' : 'TANK SHELL'}`, [pos[0], pos[1], pos[2]], null);
                         break;
                     }
                 }
@@ -741,17 +789,18 @@ async function bootstrap() {
         );
         camera.update(pos, rot[2], aspect, groundAtCam, rot[0]);
 
-        // Aim Focus, Lock-On Tracking & Predictive Lead Intercept Calculation
+        // Aim Focus, Lock-On Tracking & Kamikaze Closure Speed Calculation
         const aimFocus = weaponSystem.updateTargetLock(
             camera,
             collisionSystem,
             entityManager,
             soundManager,
             deltaSec,
-            currentMapDef.id
+            currentMapDef.id,
+            vel
         );
 
-        // Update HUD with Tactical Reticle, Scope Overlay, Lead Pip & Live Warzone Feed
+        // Update HUD with Kamikaze Reticle, Target Markers, Fleet Counter & Score
         hud.update(
             sensors,
             pos,
@@ -772,12 +821,8 @@ async function bootstrap() {
             camera,
             livekit.getMetrics(),
             livekit.getLatestDetections(),
-            {
-                alliedKills: entityManager.alliedKills,
-                hostileKills: entityManager.hostileKills,
-                latestLog: entityManager.latestBattleLog,
-                samWarning: entityManager.incomingSamWarning
-            }
+            missionManager.getStats(),
+            entityManager.getAliveHostileTargets()
         );
 
         // Send telemetry to server & LiveKit DataChannel at 10Hz
@@ -843,11 +888,12 @@ async function bootstrap() {
                 ws.send(JSON.stringify({
                     type: 'game:telemetry',
                     telemetry,
+                    mission: missionManager.getStats(),
                 }));
             }
 
             // 2. LiveKit Robotics Data Channel (Sub-100ms Telemetry Transport)
-            livekit.publishTelemetry(telemetry);
+            livekit.publishTelemetry(telemetry, missionManager.getStats());
         }
 
         // WebGPU Render Pass

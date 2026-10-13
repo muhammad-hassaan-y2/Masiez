@@ -205,10 +205,10 @@ export class LiveKitRoboticsClient {
     }
 
     /**
-     * Publishes drone telemetry via low-latency LiveKit Data Channel
+     * Publishes drone telemetry & kamikaze mission state via low-latency LiveKit Data Channel
      */
-    public publishTelemetry(telemetry: any): void {
-        if (!this.room || this.status !== 'streaming' && this.status !== 'connected') {
+    public publishTelemetry(telemetry: any, mission?: any): void {
+        if (!this.room || (this.status !== 'streaming' && this.status !== 'connected')) {
             return;
         }
 
@@ -216,12 +216,38 @@ export class LiveKitRoboticsClient {
             const payload = {
                 type: 'drone:telemetry',
                 telemetry,
+                mission,
                 timestamp: Date.now(),
             };
             const bytes = this.encoder.encode(JSON.stringify(payload));
             this.room.localParticipant.publishData(bytes, {
                 reliable: false, // lossy/low-latency for high-rate telemetry
                 topic: 'telemetry',
+            });
+            this.packetsSent++;
+        } catch (e) {
+            // Non-blocking
+        }
+    }
+
+    /**
+     * Publishes a reliable kamikaze strike / mission event over LiveKit Data Channel
+     */
+    public publishStrikeEvent(strikeEvent: any): void {
+        if (!this.room || (this.status !== 'streaming' && this.status !== 'connected')) {
+            return;
+        }
+
+        try {
+            const payload = {
+                type: 'drone:kamikaze_strike',
+                ...strikeEvent,
+                timestamp: Date.now(),
+            };
+            const bytes = this.encoder.encode(JSON.stringify(payload));
+            this.room.localParticipant.publishData(bytes, {
+                reliable: true, // reliable delivery for discrete mission/scoring events
+                topic: 'mission',
             });
             this.packetsSent++;
         } catch (e) {

@@ -2,6 +2,8 @@ import { SensorOutput } from '../wasm/PhysicsBridge';
 import { MAP_CATALOG, MapDefinition } from '../gpu/CityMapRenderer';
 import { Camera } from '../scene/Camera';
 import { FocusTargetResult } from '../gameplay/WeaponSystem';
+import { BaseEntity } from '../gameplay/EntityManager';
+import { KamikazeMissionStats } from '../gameplay/MissionManager';
 import { LiveKitMetrics, VisionDetection } from '../network/LiveKitRoboticsClient';
 
 export class HUD {
@@ -14,15 +16,17 @@ export class HUD {
     private modeEl!: HTMLElement;
     private stateEl!: HTMLElement;
 
-    // Tactical Operations & Airframe Status
+    // Tactical Operations & Kamikaze Scoring Card
     private opsPanel!: HTMLElement;
     private airframeStatusEl!: HTMLElement;
     private missionDescEl!: HTMLElement;
     private notificationEl!: HTMLElement;
 
-    // Crash Alert Modal
+    // Kamikaze Detonation / Next Drone / Mission Summary Modal
     private crashOverlayEl!: HTMLElement;
+    private crashTitleEl!: HTMLElement;
     private crashDetailsEl!: HTMLElement;
+    private crashSubtextEl!: HTMLElement;
     private crashRecoverBtn!: HTMLButtonElement;
 
     // FPV Operator On-Screen Display (OSD)
@@ -45,6 +49,7 @@ export class HUD {
     private livekitStatusEl!: HTMLElement;
     private menuHintBtnEl!: HTMLElement;
     private aiVisionOverlayEl!: HTMLElement;
+    private targetMarkersOverlayEl!: HTMLElement;
 
     // User Menu (` Backquote) Modal & Controls
     public isMenuOpen: boolean = false;
@@ -66,6 +71,7 @@ export class HUD {
     public onScopeGearToggle?: () => void;
     public onLockTargetToggle?: () => void;
     public onRecoverDrone?: () => void;
+    public onRestartMission?: () => void;
 
     // Precision Crosshair / Target Lock
     private reticleSvgEl!: SVGElement | null;
@@ -145,7 +151,7 @@ export class HUD {
         leftPanel.appendChild(this.spdEl);
         leftPanel.appendChild(this.hdgEl);
 
-        // Top Center: Tactical Operations Card & Notification Banner
+        // Top Center: Kamikaze Mission Scoring & Fleet Card
         const centerCol = document.createElement('div');
         centerCol.style.cssText = `
             display: flex;
@@ -159,23 +165,24 @@ export class HUD {
 
         this.opsPanel = document.createElement('div');
         this.opsPanel.style.cssText = `
-            background: rgba(10, 22, 34, 0.88);
+            background: rgba(10, 22, 34, 0.90);
             backdrop-filter: blur(12px);
-            padding: 8px 20px;
+            padding: 10px 24px;
             border-radius: 14px;
-            border: 1px solid rgba(0, 255, 204, 0.4);
+            border: 1px solid rgba(0, 255, 204, 0.45);
             box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
             display: flex;
-            gap: 20px;
-            font-size: 13px;
-            font-weight: 700;
+            gap: 22px;
+            font-size: 14px;
+            font-weight: 800;
             color: #00ffcc;
             align-items: center;
+            letter-spacing: 0.5px;
         `;
         this.airframeStatusEl = document.createElement('div');
-        this.airframeStatusEl.innerHTML = `AIRFRAME: <b style="color:#00ff88;">● INTACT (100%)</b>`;
+        this.airframeStatusEl.innerHTML = `💣 WARHEAD: <b style="color:#ff9933;">● ARMED</b>`;
         this.missionDescEl = document.createElement('div');
-        this.missionDescEl.innerHTML = `<span style="color:#00e5ff;">⚔ ALLIED: 0</span> | <span style="color:#ff3355;">HOSTILE: 0</span> — <span style="color:#ffcc00;">WARZONE ACTIVE</span>`;
+        this.missionDescEl.innerHTML = `<span style="color:#ff4455;">🎯 TARGETS: 0 / 6</span> &nbsp;|&nbsp; <span style="color:#00e5ff;">🚀 DRONES: 8 / 8</span> &nbsp;|&nbsp; <span style="color:#ffcc00;">🏆 SCORE: 0</span>`;
         this.opsPanel.appendChild(this.airframeStatusEl);
         this.opsPanel.appendChild(this.missionDescEl);
 
@@ -292,6 +299,18 @@ export class HUD {
         rightPanel.appendChild(this.audioEl);
         rightPanel.appendChild(this.menuHintBtnEl);
 
+        // Screen-space Hostile Target Diamond Markers Overlay
+        this.targetMarkersOverlayEl = document.createElement('div');
+        this.targetMarkersOverlayEl.id = 'hud-target-markers-overlay';
+        this.targetMarkersOverlayEl.style.cssText = `
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 9;
+        `;
+        this.container.appendChild(this.targetMarkersOverlayEl);
+
         // AI Computer Vision Object Detection Overlay
         this.aiVisionOverlayEl = document.createElement('div');
         this.aiVisionOverlayEl.id = 'hud-ai-vision-overlay';
@@ -333,12 +352,12 @@ export class HUD {
         controlsHint.innerHTML = `
             <span id="hud-pointer-status" style="color:#00ffcc; font-weight:bold;">[CLICK TO LOCK AIM]</span>
             <span style="color:#00ff88; cursor:pointer;" id="hud-menu-open-hint"><b>[\`]</b> USER MENU</span>
-            <span style="color:#ff3366;"><b>[LEFT-CLICK / F]</b> FIRE</span>
-            <span style="color:#ff55cc;"><b>[RIGHT-CLICK / Z]</b> SCOPE</span>
+            <span style="color:#ff5533;"><b>[KAMIKAZE]</b> FLY INTO TARGET</span>
+            <span style="color:#ff55cc;"><b>[RIGHT-CLICK / Z]</b> OPTICS</span>
             <span style="color:#ffcc00;"><b>[T / MMB]</b> LOCK TARGET</span>
             <span style="color:#00ffff; cursor:pointer;" id="hud-cam-toggle"><b>[V]</b> FPV/CHASE</span>
-            <span style="color:#ffaa66;"><b>[W / S / A / D]</b> MOVE</span>
-            <span style="color:#33ffdd;"><b>[Q / E]</b> TURN</span>
+            <span style="color:#ffaa66;"><b>[W / S / A / D]</b> FLY</span>
+            <span style="color:#33ffdd;"><b>[Q / E]</b> YAW</span>
             <span style="color:#33ff99;"><b>[SHIFT]</b> CLIMB</span>
             <span style="color:#66ccff;"><b>[CTRL]</b> DESCEND</span>
         `;
@@ -372,14 +391,14 @@ export class HUD {
                 <circle id="reticle-dot" cx="32" cy="32" r="2.5" fill="#00ffcc" />
             </svg>
             <div id="hud-target-lock-label" style="font-size:11px; font-weight:800; letter-spacing:1px; color:#00ffcc; text-shadow:0 0 8px rgba(0,255,204,0.8); margin-top:4px; white-space:nowrap;"></div>
-            <div id="hud-hit-marker" style="font-size:13px; font-weight:800; color:#ff3333; opacity:0; transition:opacity 0.1s; margin-top:4px; text-shadow:0 0 10px rgba(255,0,0,0.8);">✕ HIT!</div>
+            <div id="hud-hit-marker" style="font-size:13px; font-weight:800; color:#00ff88; opacity:0; transition:opacity 0.1s; margin-top:4px; text-shadow:0 0 10px rgba(0,255,136,0.9);">🎯 TARGET HIT!</div>
         `;
         this.container.appendChild(crosshairContainer);
         this.reticleSvgEl = crosshairContainer.querySelector('#hud-reticle-svg');
         this.targetLockLabelEl = crosshairContainer.querySelector('#hud-target-lock-label');
         this.hitMarkerEl = crosshairContainer.querySelector('#hud-hit-marker');
 
-        // 4. Tactical Optical Scope Overlay & Mil-dot Reticle
+        // 4. Tactical Optical Scope Overlay
         this.scopeOverlayEl = document.createElement('div');
         this.scopeOverlayEl.id = 'hud-scope-overlay';
         this.scopeOverlayEl.style.cssText = `
@@ -392,12 +411,12 @@ export class HUD {
         `;
         this.scopeOverlayEl.innerHTML = `
             <div style="position:absolute; top:28px; left:50%; transform:translateX(-50%); color:#00ffcc; font-family:monospace; font-size:13px; font-weight:bold; letter-spacing:2px; text-shadow:0 0 10px rgba(0,255,204,0.8); background:rgba(0,15,25,0.7); padding:4px 18px; border-radius:12px; border:1px solid rgba(0,255,204,0.4);">
-                TACTICAL BALLISTIC OPTICS // <span id="scope-gear-label" style="color:#ffcc00;">SCOPE: 2X</span>
+                FPV KAMIKAZE TERMINAL OPTICS // <span id="scope-gear-label" style="color:#ffcc00;">OPTICS: 2X</span>
             </div>
             <div style="position:absolute; bottom:68px; left:50%; transform:translateX(-50%); display:flex; gap:20px; font-family:monospace; font-size:12px; font-weight:bold; color:#00ffcc; background:rgba(0,10,20,0.7); padding:6px 20px; border-radius:16px; border:1px solid rgba(0,255,204,0.3);">
-                <span id="scope-weapon-mode" style="color:#ff55cc;">MODE: DUAL PLASMA</span>
+                <span id="scope-weapon-mode" style="color:#ff8833;">💣 PAYLOAD: HIGH-EXPLOSIVE WARHEAD (IMPACT)</span>
                 <span id="scope-closure-rate">CLOSURE: 0.0 m/s</span>
-                <span id="scope-elevation-mil">ELEV: 0.0 MIL</span>
+                <span id="scope-elevation-mil">PITCH: 0.0 MIL</span>
             </div>
             <svg width="100%" height="100%" style="position:absolute; inset:0;">
                 <circle cx="50%" cy="50%" r="220" fill="none" stroke="rgba(0,255,204,0.45)" stroke-width="1.5" stroke-dasharray="12 6" />
@@ -406,18 +425,6 @@ export class HUD {
                 <line x1="50%" y1="calc(50% + 20px)" x2="50%" y2="calc(50% + 220px)" stroke="#00ffcc" stroke-width="1.5" />
                 <line x1="calc(50% - 220px)" y1="50%" x2="calc(50% - 20px)" y2="50%" stroke="#00ffcc" stroke-width="1.5" />
                 <line x1="calc(50% + 20px)" y1="50%" x2="calc(50% + 220px)" y2="50%" stroke="#00ffcc" stroke-width="1.5" />
-                <circle cx="50%" cy="calc(50% - 60px)" r="2.5" fill="#00ffcc" />
-                <circle cx="50%" cy="calc(50% - 120px)" r="2.5" fill="#00ffcc" />
-                <circle cx="50%" cy="calc(50% - 180px)" r="2.5" fill="#00ffcc" />
-                <circle cx="50%" cy="calc(50% + 60px)" r="2.5" fill="#00ffcc" />
-                <circle cx="50%" cy="calc(50% + 120px)" r="2.5" fill="#00ffcc" />
-                <circle cx="50%" cy="calc(50% + 180px)" r="2.5" fill="#00ffcc" />
-                <circle cx="calc(50% - 60px)" cy="50%" r="2.5" fill="#00ffcc" />
-                <circle cx="calc(50% - 120px)" cy="50%" r="2.5" fill="#00ffcc" />
-                <circle cx="calc(50% - 180px)" cy="50%" r="2.5" fill="#00ffcc" />
-                <circle cx="calc(50% + 60px)" cy="50%" r="2.5" fill="#00ffcc" />
-                <circle cx="calc(50% + 120px)" cy="50%" r="2.5" fill="#00ffcc" />
-                <circle cx="calc(50% + 180px)" cy="50%" r="2.5" fill="#00ffcc" />
             </svg>
         `;
         this.container.appendChild(this.scopeOverlayEl);
@@ -426,7 +433,7 @@ export class HUD {
         this.scopeClosureEl = this.scopeOverlayEl.querySelector('#scope-closure-rate');
         this.scopeElevationEl = this.scopeOverlayEl.querySelector('#scope-elevation-mil');
 
-        // 5. Predictive Lead Pip Indicator
+        // 5. Predictive Intercept Pip Indicator
         this.leadPipEl = document.createElement('div');
         this.leadPipEl.id = 'hud-lead-pip';
         this.leadPipEl.style.cssText = `
@@ -444,7 +451,7 @@ export class HUD {
                 <polygon points="20,2 38,20 20,38 2,20" fill="none" stroke="#ffcc00" stroke-width="2" stroke-dasharray="4 2" />
                 <circle cx="20" cy="20" r="3.5" fill="#ffcc00" />
             </svg>
-            <div style="font-family:monospace; font-size:10px; font-weight:800; color:#ffcc00; text-shadow:0 0 8px rgba(255,204,0,0.9); margin-top:2px;">◎ LEAD</div>
+            <div style="font-family:monospace; font-size:10px; font-weight:800; color:#ffcc00; text-shadow:0 0 8px rgba(255,204,0,0.9); margin-top:2px;">◎ INTERCEPT</div>
         `;
         this.container.appendChild(this.leadPipEl);
 
@@ -494,14 +501,13 @@ export class HUD {
         this.loadingOverlay.appendChild(this.loadingText);
         this.loadingOverlay.appendChild(barContainer);
 
-        // 7. Crash Alarm & Airframe Recovery Overlay
+        // 7. Kamikaze Detonation / Next Drone Deployment / Mission Summary Overlay
         this.crashOverlayEl = document.createElement('div');
         this.crashOverlayEl.id = 'hud-crash-overlay';
         this.crashOverlayEl.style.cssText = `
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at center, rgba(140, 10, 20, 0.5) 0%, rgba(30, 5, 10, 0.9) 70%, rgba(5, 0, 0, 0.98) 100%);
-            box-shadow: inset 0 0 140px rgba(255, 30, 50, 0.85);
+            background: radial-gradient(circle at center, rgba(20, 40, 50, 0.45) 0%, rgba(10, 15, 24, 0.88) 70%, rgba(4, 6, 10, 0.96) 100%);
             display: none;
             flex-direction: column;
             align-items: center;
@@ -509,21 +515,21 @@ export class HUD {
             gap: 16px;
             z-index: 950;
             pointer-events: auto;
-            backdrop-filter: blur(8px);
+            backdrop-filter: blur(6px);
         `;
         this.crashOverlayEl.innerHTML = `
-            <div style="font-size: 34px; font-weight: 900; letter-spacing: 3px; color: #ff2244; text-shadow: 0 0 30px rgba(255, 34, 68, 0.95); text-align: center;">
-                ⚠️ AIRFRAME DESTROYED — DRONE CRASHED ⚠️
+            <div id="hud-crash-title" style="font-size: 32px; font-weight: 900; letter-spacing: 2.5px; color: #00ff88; text-shadow: 0 0 28px rgba(0, 255, 136, 0.9); text-align: center;">
+                🎯 KAMIKAZE STRIKE SUCCESSFUL!
             </div>
-            <div id="hud-crash-details" style="font-size: 17px; font-weight: 700; color: #ffcc00; letter-spacing: 1.5px; background: rgba(0,0,0,0.7); padding: 8px 24px; border-radius: 8px; border: 1px solid rgba(255, 204, 0, 0.5); text-align:center;">
-                COLLISION DETECTED
+            <div id="hud-crash-details" style="font-size: 16px; font-weight: 800; color: #ffcc00; letter-spacing: 1.2px; background: rgba(0,0,0,0.75); padding: 10px 26px; border-radius: 10px; border: 1px solid rgba(255, 204, 0, 0.5); text-align:center;">
+                TARGET NEUTRALIZED
             </div>
-            <div style="font-size: 14px; font-weight: 600; color: #bbbbbb; letter-spacing: 1px;">
-                MOTORS CUT • AIRFRAME BREACHED • AUTONOMY HALTED
+            <div id="hud-crash-subtext" style="font-size: 14px; font-weight: 700; color: #aaddff; letter-spacing: 1px; text-align: center;">
+                SWITCHING OPERATOR FEED TO NEXT FPV DRONE...
             </div>
         `;
         this.crashRecoverBtn = document.createElement('button');
-        this.crashRecoverBtn.innerText = `[SPACE] OR [R] RECOVER DRONE TO BASE`;
+        this.crashRecoverBtn.innerText = `[SPACE] DEPLOY NEXT FPV DRONE`;
         this.crashRecoverBtn.style.cssText = `
             background: linear-gradient(135deg, #00ffcc, #00aa88);
             color: #05141c;
@@ -542,7 +548,9 @@ export class HUD {
         this.crashRecoverBtn.onmouseleave = () => { this.crashRecoverBtn.style.transform = 'scale(1.0)'; };
         this.crashRecoverBtn.onclick = () => this.onRecoverDrone?.();
         this.crashOverlayEl.appendChild(this.crashRecoverBtn);
+        this.crashTitleEl = this.crashOverlayEl.querySelector('#hud-crash-title') as HTMLElement;
         this.crashDetailsEl = this.crashOverlayEl.querySelector('#hud-crash-details') as HTMLElement;
+        this.crashSubtextEl = this.crashOverlayEl.querySelector('#hud-crash-subtext') as HTMLElement;
 
         // 8. Drone Operator First Person View (FPV) OSD Interface
         this.fpvOsdContainer = document.createElement('div');
@@ -563,7 +571,7 @@ export class HUD {
 
             <div style="position:absolute; top:78px; left:26px; font-size:12px; font-weight:700; color:#00ffcc; line-height:1.45; text-shadow:0 0 6px rgba(0,255,204,0.8);">
                 <div><span style="color:#ff3344; animation:pulse 1.2s infinite;">● REC</span> <span id="fpv-rec-timer">00:01:24</span> // LIVEKIT WEBRTC</div>
-                <div style="color:#88ddff;">CAM SENSOR: ONBOARD GIMBAL FPV</div>
+                <div style="color:#ffaa44;">PAYLOAD: KAMIKAZE HE WARHEAD</div>
             </div>
 
             <div style="position:absolute; top:78px; right:26px; text-align:right; font-size:12px; font-weight:700; color:#00ffcc; line-height:1.45; text-shadow:0 0 6px rgba(0,255,204,0.8);">
@@ -631,7 +639,7 @@ export class HUD {
             <div style="position:absolute; bottom:68px; left:50%; transform:translateX(-50%); display:flex; gap:18px; background:rgba(5,15,25,0.82); border:1px solid rgba(0,255,204,0.4); border-radius:14px; padding:6px 20px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); white-space:nowrap;">
                 <div id="fpv-gimbal-tilt" style="color:#ffcc00;">GIMBAL: 0°</div>
                 <div id="fpv-gps-coords" style="color:#88ddff;">GPS: 33.6000° N, 72.9000° E</div>
-                <div style="color:#00ff88;">OPERATOR FPV // [\`] USER MENU</div>
+                <div style="color:#00ff88;">KAMIKAZE FPV // [\`] USER MENU</div>
             </div>
         `;
 
@@ -707,7 +715,7 @@ export class HUD {
         headerRow.appendChild(closeMenuBtn);
         menuCard.appendChild(headerRow);
 
-        // Section 1: Game Settings (Sound, Speed, Camera, LiveKit Robot Link, Recover)
+        // Section 1: Game Settings (Sound, Speed, Camera, LiveKit Robot Link, Restart Mission)
         const settingsSection = document.createElement('div');
         settingsSection.style.cssText = `
             display: flex;
@@ -761,19 +769,19 @@ export class HUD {
         this.menuCameraBtn = createSettingBtn('CAMERA VIEW: <b>FPV</b>', () => this.onCameraToggle?.());
         this.menuLiveKitBtn = createSettingBtn('LIVEKIT ROBOT: <b>CONNECTING</b>', () => this.onLiveKitToggle?.());
 
-        const recoverBtn = createSettingBtn('RECOVER / RESET DRONE TO BASE', () => {
-            this.onRecoverDrone?.();
+        const restartMissionBtn = createSettingBtn('RESTART MISSION (RESET TARGETS & DRONES)', () => {
+            this.onRestartMission?.();
             this.toggleUserMenu(false);
         });
-        recoverBtn.style.gridColumn = 'span 2';
-        recoverBtn.style.textAlign = 'center';
-        recoverBtn.style.color = '#00ffcc';
+        restartMissionBtn.style.gridColumn = 'span 2';
+        restartMissionBtn.style.textAlign = 'center';
+        restartMissionBtn.style.color = '#00ffcc';
 
         settingsGrid.appendChild(this.menuAudioBtn);
         settingsGrid.appendChild(this.menuSpeedBtn);
         settingsGrid.appendChild(this.menuCameraBtn);
         settingsGrid.appendChild(this.menuLiveKitBtn);
-        settingsGrid.appendChild(recoverBtn);
+        settingsGrid.appendChild(restartMissionBtn);
         settingsSection.appendChild(settingsGrid);
         menuCard.appendChild(settingsSection);
 
@@ -886,7 +894,7 @@ export class HUD {
         notificationText: string,
         isMuted: boolean,
         isCrashed: boolean = false,
-        crashReason: string = "",
+        _crashReason: string = "",
         hitMarkerTimer: number = 0,
         hitMarkerText: string = "",
         targetFocus?: FocusTargetResult | null,
@@ -894,7 +902,8 @@ export class HUD {
         camera?: Camera,
         livekitMetrics?: LiveKitMetrics,
         aiDetections?: { detections: VisionDetection[]; width: number; height: number },
-        warStats?: { alliedKills: number; hostileKills: number; latestLog: string; samWarning: boolean }
+        missionStats?: KamikazeMissionStats,
+        aliveHostileTargets?: BaseEntity[]
     ): void {
         const groundSpeed = Math.sqrt(vel[0] * vel[0] + vel[2] * vel[2]);
         this.altEl.innerText = `ALT (AGL): ${sensors.altitudeAGL.toFixed(1)} m`;
@@ -905,23 +914,47 @@ export class HUD {
         this.gpsEl.innerText = `GPS: 3D FIX (12 sats)`;
         this.modeEl.innerText = `FC: ${flightMode} | [V] ${camMode}`;
 
-        if (isCrashed) {
-            this.stateEl.innerHTML = `STATE: <span style="color:#ff2244; font-weight: bold;">● CRASHED</span>`;
-            this.airframeStatusEl.innerHTML = `AIRFRAME: <b style="color:#ff2244;">✖ DESTROYED</b>`;
-            this.crashOverlayEl.style.display = 'flex';
-            this.crashDetailsEl.innerText = crashReason ? `COLLISION: ${crashReason.toUpperCase()}` : 'COLLISION WITH TERRAIN / STRUCTURE';
-        } else {
-            this.stateEl.innerHTML = `STATE: <span style="color:${armed ? '#00ff66' : '#ff3333'}; font-weight: bold;">${armed ? '● ARMED' : '○ DISARMED'}</span>`;
-            this.airframeStatusEl.innerHTML = `AIRFRAME: <b style="color:#00ff88;">● INTACT (100%)</b>`;
-            this.crashOverlayEl.style.display = 'none';
+        // Update Top-Center Kamikaze Mission Scoring & Fleet Status
+        if (missionStats && this.missionDescEl) {
+            this.missionDescEl.innerHTML = `
+                <span style="color:#ff4455;">🎯 TARGETS: ${missionStats.targetsHit} / ${missionStats.totalTargets}</span>
+                &nbsp;|&nbsp;
+                <span style="color:#00e5ff;">🚀 DRONES: ${missionStats.dronesRemaining} / ${missionStats.totalDrones}</span>
+                &nbsp;|&nbsp;
+                <span style="color:#ffcc00;">🏆 SCORE: ${missionStats.score}</span>
+            `;
         }
 
-        if (warStats && this.missionDescEl) {
-            if (warStats.samWarning) {
-                this.missionDescEl.innerHTML = `<span style="color:#ff2244; font-weight:900;">⚠ RWR WARNING: INCOMING HOSTILE TANK FIRE — EVADE!</span>`;
-            } else {
-                this.missionDescEl.innerHTML = `<span style="color:#00e5ff;">⚔ ALLIED: ${warStats.alliedKills}</span> | <span style="color:#ff3355;">HOSTILE: ${warStats.hostileKills}</span> — <span style="color:#ffdd66;">${warStats.latestLog}</span>`;
+        if (isCrashed) {
+            this.stateEl.innerHTML = `STATE: <span style="color:#ff9933; font-weight: bold;">● DETONATED</span>`;
+            this.airframeStatusEl.innerHTML = `💣 WARHEAD: <b style="color:#ff4444;">✦ DETONATED</b>`;
+            this.crashOverlayEl.style.display = 'flex';
+
+            if (missionStats) {
+                if (missionStats.missionStatus === 'SUCCESS') {
+                    this.crashTitleEl.style.color = '#00ff88';
+                    this.crashTitleEl.innerText = missionStats.lastStrikeTitle || '🏆 MISSION ACCOMPLISHED — ALL TARGETS DESTROYED!';
+                    this.crashDetailsEl.innerText = missionStats.lastStrikeDetail;
+                    this.crashSubtextEl.innerText = 'ALL HOSTILE ARMOR & SOLDIER TARGETS ELIMINATED';
+                    this.crashRecoverBtn.innerText = '[SPACE] START NEW MISSION';
+                } else if (missionStats.missionStatus === 'FAILED') {
+                    this.crashTitleEl.style.color = '#ff3355';
+                    this.crashTitleEl.innerText = missionStats.lastStrikeTitle || '⚠️ MISSION FAILED — OUT OF DRONES';
+                    this.crashDetailsEl.innerText = missionStats.lastStrikeDetail;
+                    this.crashSubtextEl.innerText = 'ALL AVAILABLE FPV KAMIKAZE DRONES EXPENDED';
+                    this.crashRecoverBtn.innerText = '[SPACE] RETRY MISSION';
+                } else {
+                    this.crashTitleEl.style.color = missionStats.lastStrikeSuccess ? '#00ff88' : '#ffaa33';
+                    this.crashTitleEl.innerText = missionStats.lastStrikeTitle;
+                    this.crashDetailsEl.innerText = missionStats.lastStrikeDetail;
+                    this.crashSubtextEl.innerText = `OPERATOR HAS ${missionStats.dronesRemaining} OF ${missionStats.totalDrones} FPV DRONES REMAINING • AUTO-DEPLOYING NEXT DRONE...`;
+                    this.crashRecoverBtn.innerText = `[SPACE] DEPLOY NEXT DRONE NOW (${missionStats.dronesRemaining} LEFT)`;
+                }
             }
+        } else {
+            this.stateEl.innerHTML = `STATE: <span style="color:${armed ? '#00ff66' : '#ff3333'}; font-weight: bold;">${armed ? '● ARMED' : '○ DISARMED'}</span>`;
+            this.airframeStatusEl.innerHTML = `💣 WARHEAD: <b style="color:#ff9933;">● ARMED (IMPACT)</b>`;
+            this.crashOverlayEl.style.display = 'none';
         }
 
         this.speedModeEl.innerHTML = `[R] SPEED: <b>${speedMode}</b>`;
@@ -941,9 +974,9 @@ export class HUD {
         // Scope Gear & Target Lock Quick Status
         if (camera) {
             if (camera.isScoped) {
-                this.scopeGearEl.innerHTML = `[Z] SCOPE: <b style="color:#00ffcc">${camera.scopeGear}X [ACTIVE]</b>`;
+                this.scopeGearEl.innerHTML = `[Z] OPTICS: <b style="color:#00ffcc">${camera.scopeGear}X [ACTIVE]</b>`;
             } else {
-                this.scopeGearEl.innerHTML = `[Z] SCOPE: <b>${camera.scopeGear}X [OFF]</b>`;
+                this.scopeGearEl.innerHTML = `[Z] OPTICS: <b>${camera.scopeGear}X [OFF]</b>`;
             }
         }
 
@@ -989,6 +1022,44 @@ export class HUD {
             }
         }
 
+        // Render Screen-Space Hostile Target Diamonds so Operator can spot all remaining targets
+        if (this.targetMarkersOverlayEl && camera && aliveHostileTargets && !isCrashed) {
+            const screenW = window.innerWidth;
+            const screenH = window.innerHeight;
+            let markersHtml = '';
+
+            for (const ent of aliveHostileTargets) {
+                const targetPos: [number, number, number] = [
+                    ent.pos[0],
+                    ent.pos[1] + ent.height + 0.6,
+                    ent.pos[2]
+                ];
+                const proj = camera.projectToScreen(targetPos, screenW, screenH);
+                if (!proj.visible) continue;
+
+                const dist = Math.hypot(
+                    ent.pos[0] - pos[0],
+                    ent.pos[1] - pos[1],
+                    ent.pos[2] - pos[2]
+                );
+                const isLocked = targetFocus?.lockedEntity?.id === ent.id;
+                const borderColor = isLocked ? '#ffcc00' : '#ff3355';
+                const tagText = `${ent.type} • ${dist.toFixed(0)}m`;
+
+                markersHtml += `
+                    <div style="position:absolute; left:${Math.round(proj.x)}px; top:${Math.round(proj.y)}px; transform:translate(-50%, -100%); display:flex; flex-direction:column; align-items:center; pointer-events:none;">
+                        <div style="background:rgba(25, 5, 10, 0.82); border:1px solid ${borderColor}; color:${borderColor}; font-size:10px; font-weight:800; padding:1px 6px; border-radius:4px; white-space:nowrap; letter-spacing:0.5px;">
+                            🎯 ${tagText}
+                        </div>
+                        <div style="width:8px; height:8px; border:2px solid ${borderColor}; transform:rotate(45deg); margin-top:3px;"></div>
+                    </div>
+                `;
+            }
+            this.targetMarkersOverlayEl.innerHTML = markersHtml;
+        } else if (this.targetMarkersOverlayEl) {
+            this.targetMarkersOverlayEl.innerHTML = '';
+        }
+
         // Render AI Vision Detection Bounding Boxes from LiveKit DataChannel
         if (this.aiVisionOverlayEl) {
             if (aiDetections && aiDetections.detections && aiDetections.detections.length > 0) {
@@ -1013,10 +1084,6 @@ export class HUD {
                             <div style="position:absolute; top:-22px; left:-2px; background:rgba(0,30,15,0.85); color:#00ff88; font-size:11px; font-weight:800; padding:2px 6px; border:1px solid #00ff88; border-radius:3px; letter-spacing:0.5px; white-space:nowrap;">
                                 AI: ${det.label.toUpperCase()} [${confPct}%]
                             </div>
-                            <div style="position:absolute; top:2px; left:2px; width:6px; height:6px; border-top:2px solid #00ffcc; border-left:2px solid #00ffcc;"></div>
-                            <div style="position:absolute; top:2px; right:2px; width:6px; height:6px; border-top:2px solid #00ffcc; border-right:2px solid #00ffcc;"></div>
-                            <div style="position:absolute; bottom:2px; left:2px; width:6px; height:6px; border-bottom:2px solid #00ffcc; border-left:2px solid #00ffcc;"></div>
-                            <div style="position:absolute; bottom:2px; right:2px; width:6px; height:6px; border-bottom:2px solid #00ffcc; border-right:2px solid #00ffcc;"></div>
                         </div>
                     `;
                 }
@@ -1047,18 +1114,16 @@ export class HUD {
             if (camera.isScoped) {
                 this.scopeOverlayEl.style.display = 'block';
                 if (this.scopeGearLabelEl) {
-                    this.scopeGearLabelEl.innerText = `SCOPE: ${camera.scopeGear}X MAG`;
+                    this.scopeGearLabelEl.innerText = `OPTICS: ${camera.scopeGear}X MAG`;
                 }
                 if (this.scopeWeaponModeEl) {
-                    this.scopeWeaponModeEl.innerText = targetFocus?.weaponMode === 'SNIPER_RAILGUN'
-                        ? '⚡ HIGH-VELOCITY RAILGUN (460 m/s)'
-                        : '✦ RAPID-FIRE DUAL PLASMA (280 m/s)';
+                    this.scopeWeaponModeEl.innerText = '💣 PAYLOAD: HIGH-EXPLOSIVE WARHEAD (IMPACT)';
                 }
                 if (this.scopeClosureEl) {
                     this.scopeClosureEl.innerText = `CLOSURE: ${(targetFocus?.targetClosureSpeed || 0).toFixed(1)} m/s`;
                 }
                 if (this.scopeElevationEl) {
-                    this.scopeElevationEl.innerText = `ELEV: ${(camera.mouseOrbitPitch * (1000 / Math.PI)).toFixed(1)} MIL`;
+                    this.scopeElevationEl.innerText = `PITCH: ${(camera.mouseOrbitPitch * (1000 / Math.PI)).toFixed(1)} MIL`;
                 }
             } else {
                 this.scopeOverlayEl.style.display = 'none';
@@ -1089,7 +1154,6 @@ export class HUD {
                 const ent = targetFocus.lockedEntity;
                 const entName = ent.roleName || ent.id || 'TARGET';
                 const distStr = `${targetFocus.distance.toFixed(0)}m`;
-                const hpPct = Math.max(0, Math.round((ent.health / ent.maxHealth) * 100));
 
                 this.reticleSvgEl.querySelectorAll('circle, line').forEach(el => {
                     (el as SVGElement).setAttribute('stroke', '#ff2244');
@@ -1098,7 +1162,7 @@ export class HUD {
                     }
                 });
                 this.reticleSvgEl.style.transform = 'scale(1.24)';
-                this.targetLockLabelEl.innerHTML = `🎯 LOCKED: <span style="color:#ff3355;">${entName.toUpperCase()}</span> [${distStr}] | HP: ${hpPct}%`;
+                this.targetLockLabelEl.innerHTML = `🎯 KAMIKAZE LOCK: <span style="color:#ff3355;">${entName.toUpperCase()}</span> [${distStr}] — FLY IN TO DETONATE`;
                 this.targetLockLabelEl.style.color = '#ff3355';
                 this.targetLockLabelEl.style.textShadow = '0 0 10px rgba(255, 34, 68, 0.9)';
             } else if (targetFocus && targetFocus.lockState === 'ACQUIRING' && targetFocus.candidateEntity) {
@@ -1115,17 +1179,6 @@ export class HUD {
                 this.targetLockLabelEl.innerHTML = `⟲ ACQUIRING TARGET [${pct}%]: <span style="color:#ffcc00;">${ent.roleName}</span> [${targetFocus.distance.toFixed(0)}m]`;
                 this.targetLockLabelEl.style.color = '#ffcc00';
                 this.targetLockLabelEl.style.textShadow = '0 0 8px rgba(255, 204, 0, 0.8)';
-            } else if (targetFocus && targetFocus.lockState === 'LOST') {
-                this.reticleSvgEl.querySelectorAll('circle, line').forEach(el => {
-                    (el as SVGElement).setAttribute('stroke', '#ff8800');
-                    if (el.tagName === 'circle' && el.getAttribute('fill') !== 'none') {
-                        (el as SVGElement).setAttribute('fill', '#ff8800');
-                    }
-                });
-                this.reticleSvgEl.style.transform = 'scale(1.1)';
-                this.targetLockLabelEl.innerHTML = `⚠ LOCK INTERRUPTED [LOS MEMORY TRACK]`;
-                this.targetLockLabelEl.style.color = '#ff8800';
-                this.targetLockLabelEl.style.textShadow = '0 0 8px rgba(255, 136, 0, 0.8)';
             } else {
                 this.reticleSvgEl.querySelectorAll('circle, line').forEach(el => {
                     (el as SVGElement).setAttribute('stroke', '#00ffcc');
@@ -1147,7 +1200,7 @@ export class HUD {
         // Hit marker
         if (this.hitMarkerEl) {
             if (hitMarkerTimer > 0) {
-                this.hitMarkerEl.innerText = hitMarkerText || '✕ HIT!';
+                this.hitMarkerEl.innerText = hitMarkerText || '🎯 TARGET HIT!';
                 this.hitMarkerEl.style.opacity = '1';
             } else {
                 this.hitMarkerEl.style.opacity = '0';

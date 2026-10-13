@@ -5,8 +5,6 @@ import { MissionManager } from './MissionManager';
 import { Camera } from '../scene/Camera';
 
 export type ProjectileKind =
-    | 'PLAYER_PLASMA'
-    | 'PLAYER_RAILGUN'
     | 'TANK_SHELL'
     | 'SAM_MISSILE'
     | 'RPG_ROCKET'
@@ -30,7 +28,6 @@ export interface Projectile {
     targetEntityId?: string;
     targetsPlayerDrone?: boolean;
     homingStrength?: number;
-    isRailgun?: boolean;
 }
 
 export interface ImpactParticle {
@@ -40,7 +37,7 @@ export interface ImpactParticle {
     maxLife: number;
     color: [number, number, number, number];
     size?: number;
-    buoyancy?: number; // Positive rises like smoke, negative falls with gravity
+    buoyancy?: number;
 }
 
 export type LockState = 'OFF' | 'SEARCHING' | 'ACQUIRING' | 'LOCKED' | 'LOST';
@@ -54,7 +51,7 @@ export interface FocusTargetResult {
     acquireProgress: number; // 0.0 to 1.0
     predictedLeadPoint: [number, number, number] | null;
     targetClosureSpeed: number;
-    weaponMode: 'DUAL_PLASMA' | 'SNIPER_RAILGUN';
+    weaponMode: 'KAMIKAZE_WARHEAD';
 }
 
 export class WeaponSystem {
@@ -72,7 +69,6 @@ export class WeaponSystem {
     public predictedLeadPoint: [number, number, number] | null = null;
     public targetClosureSpeed: number = 0;
 
-    private lastShotTime: number = 0;
     public hitMarkerTimer: number = 0;
     public hitMarkerText: string = "";
 
@@ -125,7 +121,6 @@ export class WeaponSystem {
             },
             spawnWreckSmoke: (pos) => {
                 if (this.particles.length > 900) return;
-                // Flickering flame core
                 const fireLife = 0.35 + Math.random() * 0.35;
                 this.particles.push({
                     pos: [
@@ -140,7 +135,6 @@ export class WeaponSystem {
                     size: 0.48 + Math.random() * 0.35,
                     buoyancy: 3.0
                 });
-                // Rising dark smoke column
                 const smokeLife = 1.1 + Math.random() * 0.9;
                 const shade = 0.14 + Math.random() * 0.12;
                 this.particles.push({
@@ -164,7 +158,7 @@ export class WeaponSystem {
     }
 
     /**
-     * Find best entity candidate aligned with camera crosshair within range
+     * Find best hostile entity candidate aligned with camera crosshair within range
      */
     public findBestTargetUnderReticle(
         camera: Camera,
@@ -177,14 +171,14 @@ export class WeaponSystem {
         let bestScore = Infinity;
 
         for (const ent of entityManager.entities) {
-            if (!ent.isAlive) continue;
+            if (!ent.isAlive || ent.faction !== 'HOSTILE') continue;
             const toEnt = [
                 ent.pos[0] - camPos[0],
                 (ent.pos[1] + ent.height * 0.5) - camPos[1],
                 ent.pos[2] - camPos[2]
             ];
             const dist = Math.hypot(toEnt[0], toEnt[1], toEnt[2]);
-            if (dist < 2.0 || dist > maxRange) continue;
+            if (dist < 1.0 || dist > maxRange) continue;
 
             const dot = toEnt[0] * camFwd[0] + toEnt[1] * camFwd[1] + toEnt[2] * camFwd[2];
             if (dot <= 0) continue;
@@ -195,11 +189,9 @@ export class WeaponSystem {
                 toEnt[2] - camFwd[2] * dot
             );
 
-            const tolerance = Math.max(ent.radius * 2.2, dot * 0.065);
+            const tolerance = Math.max(ent.radius * 2.4, dot * 0.075);
             if (perpDist <= tolerance) {
-                let score = perpDist + dist * 0.05;
-                // Prioritize hostile units slightly when scanning
-                if (ent.faction === 'HOSTILE') score *= 0.85;
+                const score = perpDist + dist * 0.04;
                 if (score < bestScore) {
                     bestScore = score;
                     bestTarget = ent;
@@ -228,33 +220,32 @@ export class WeaponSystem {
             this.lockBreakTimer = 0;
             soundManager.playTargetLocked();
         } else {
-            soundManager.playLockLost();
+            // If no hostile target is directly under reticle, cycle to the nearest alive hostile target
+            const aliveHostiles = entityManager.getAliveHostileTargets();
+            if (aliveHostiles.length > 0) {
+                let nearest = aliveHostiles[0];
+                let minDist = Infinity;
+                for (const h of aliveHostiles) {
+                    const d = Math.hypot(
+                        h.pos[0] - camera.position[0],
+                        h.pos[1] - camera.position[1],
+                        h.pos[2] - camera.position[2]
+                    );
+                    if (d < minDist) {
+                        minDist = d;
+                        nearest = h;
+                    }
+                }
+                this.lockedEntity = nearest;
+                this.candidateEntity = nearest;
+                this.lockState = 'LOCKED';
+                this.acquireTimer = this.acquireDuration;
+                this.lockBreakTimer = 0;
+                soundManager.playTargetLocked();
+            } else {
+                soundManager.playLockLost();
+            }
         }
-    }
-
-    /**
-     * Cycle through available targets in the world
-     */
-    public cycleTarget(camera: Camera, entityManager: EntityManager, soundManager: SoundManager): void {
-        const alive = entityManager.entities.filter(e => e.isAlive);
-        if (alive.length === 0) {
-            this.clearLock(soundManager);
-            return;
-        }
-
-        if (!this.lockedEntity) {
-            this.toggleLock(camera, entityManager, soundManager);
-            return;
-        }
-
-        const currentIdx = alive.findIndex(e => e.id === this.lockedEntity?.id);
-        const nextIdx = (currentIdx + 1) % alive.length;
-        this.lockedEntity = alive[nextIdx];
-        this.candidateEntity = this.lockedEntity;
-        this.lockState = 'LOCKED';
-        this.acquireTimer = this.acquireDuration;
-        this.lockBreakTimer = 0;
-        soundManager.playTargetLocked();
     }
 
     /**
@@ -274,7 +265,7 @@ export class WeaponSystem {
     }
 
     /**
-     * Updates active target acquisition, line-of-sight tracking, and predictive lead calculation
+     * Updates active target acquisition, line-of-sight tracking, and kamikaze intercept point
      */
     public updateTargetLock(
         camera: Camera,
@@ -282,7 +273,8 @@ export class WeaponSystem {
         entityManager: EntityManager,
         soundManager: SoundManager,
         dt: number,
-        activeMapId: string = 'airfield'
+        activeMapId: string = 'airfield',
+        droneVel?: [number, number, number]
     ): FocusTargetResult {
         const camPos = camera.position;
         const camFwd = camera.getForwardVector();
@@ -308,31 +300,13 @@ export class WeaponSystem {
                     ent.pos[2] - camPos[2]
                 ];
                 const dist = Math.hypot(toEnt[0], toEnt[1], toEnt[2]);
-                const dot = toEnt[0] * camFwd[0] + toEnt[1] * camFwd[1] + toEnt[2] * camFwd[2];
-
-                const losHit = collisionSystem.raycast(camPos, [ent.pos[0], ent.pos[1] + ent.height * 0.5, ent.pos[2]]);
-                const losBlocked = losHit && losHit.dist < dist * 0.94;
-
-                if (dist > maxRange || dot <= 0 || losBlocked) {
-                    this.lockBreakTimer += dt;
-                    if (this.lockBreakTimer > this.lockBreakGrace) {
-                        this.clearLock(soundManager);
-                    } else {
-                        this.lockState = 'LOST';
-                    }
-                } else {
-                    this.lockBreakTimer = 0;
-                    this.lockState = 'LOCKED';
-                }
-
-                if (this.lockedEntity) {
-                    bestDist = dist;
-                    targetFocusPoint = [ent.pos[0], ent.pos[1] + ent.height * 0.5, ent.pos[2]];
-                }
+                bestDist = dist;
+                targetFocusPoint = [ent.pos[0], ent.pos[1] + ent.height * 0.5, ent.pos[2]];
+                this.lockState = 'LOCKED';
             }
         }
 
-        // 2. If not locked, scan for candidate targets under reticle
+        // 2. If not locked, scan for candidate hostile targets under reticle
         if (!this.lockedEntity) {
             const bestCandidate = this.findBestTargetUnderReticle(camera, entityManager, maxRange);
             if (bestCandidate) {
@@ -363,7 +337,7 @@ export class WeaponSystem {
             }
         }
 
-        // 3. Fallback to building/obstacle raycast if no entity targeted
+        // 3. Fallback to building/obstacle/ground raycast if no entity targeted
         if (!this.lockedEntity && !this.candidateEntity) {
             const colHit = collisionSystem.raycast(camPos, rayEnd);
             if (colHit && colHit.dist < bestDist) {
@@ -371,7 +345,6 @@ export class WeaponSystem {
                 targetFocusPoint = colHit.point;
             }
 
-            // 4. Ground elevation raymarch
             let prevT = 0;
             let prevDiff = camPos[1] - collisionSystem.getGroundHeight(activeMapId, camPos[0], camPos[2], camera.currentGroundElevation);
             const stepDist = 5.0;
@@ -400,25 +373,25 @@ export class WeaponSystem {
             }
         }
 
-        const weaponMode: 'DUAL_PLASMA' | 'SNIPER_RAILGUN' = (camera.isScoped && camera.scopeGear >= 4) ? 'SNIPER_RAILGUN' : 'DUAL_PLASMA';
-        const bulletSpeed = weaponMode === 'SNIPER_RAILGUN' ? 460.0 : 280.0;
-
         const activeEnt = this.lockedEntity || this.candidateEntity;
         if (activeEnt) {
             const headingRad = activeEnt.headingDeg * (Math.PI / 180.0);
             const entVx = Math.sin(headingRad) * activeEnt.speed;
             const entVz = Math.cos(headingRad) * activeEnt.speed;
-            const flightTime = bestDist / bulletSpeed;
+            const droneSpd = droneVel ? Math.max(20.0, Math.hypot(droneVel[0], droneVel[1], droneVel[2])) : 30.0;
+            const interceptTime = Math.min(4.0, bestDist / droneSpd);
 
             this.predictedLeadPoint = [
-                activeEnt.pos[0] + entVx * flightTime,
+                activeEnt.pos[0] + entVx * interceptTime,
                 activeEnt.pos[1] + activeEnt.height * 0.5,
-                activeEnt.pos[2] + entVz * flightTime
+                activeEnt.pos[2] + entVz * interceptTime
             ];
 
             const toEntX = (activeEnt.pos[0] - camPos[0]) / (bestDist || 1);
             const toEntZ = (activeEnt.pos[2] - camPos[2]) / (bestDist || 1);
-            this.targetClosureSpeed = -(entVx * toEntX + entVz * toEntZ);
+            const relVx = (droneVel ? droneVel[0] : 0) - entVx;
+            const relVz = (droneVel ? droneVel[2] : 0) - entVz;
+            this.targetClosureSpeed = relVx * toEntX + relVz * toEntZ;
         } else {
             this.predictedLeadPoint = null;
             this.targetClosureSpeed = 0;
@@ -433,131 +406,42 @@ export class WeaponSystem {
             acquireProgress: Math.min(1.0, this.acquireTimer / this.acquireDuration),
             predictedLeadPoint: this.predictedLeadPoint,
             targetClosureSpeed: this.targetClosureSpeed,
-            weaponMode
+            weaponMode: 'KAMIKAZE_WARHEAD'
         };
     }
 
-    public fire(
-        dronePos: [number, number, number],
-        droneRotDeg: [number, number, number],
-        droneVel: [number, number, number],
-        camera: Camera,
-        collisionSystem: CollisionSystem,
+    /**
+     * Detonates the drone's onboard explosive warhead on impact, destroying any hostile targets
+     * directly hit or within the warhead's 5.5m lethal blast radius.
+     */
+    public detonateWarhead(
+        blastPos: [number, number, number],
         entityManager: EntityManager,
         soundManager: SoundManager,
-        nowSec: number,
-        activeMapId: string = 'airfield'
-    ): boolean {
-        const weaponMode: 'DUAL_PLASMA' | 'SNIPER_RAILGUN' = (camera.isScoped && camera.scopeGear >= 4) ? 'SNIPER_RAILGUN' : 'DUAL_PLASMA';
-        const cooldown = weaponMode === 'SNIPER_RAILGUN' ? 0.38 : 0.14;
+        directHitEntity?: BaseEntity | null
+    ): BaseEntity[] {
+        soundManager.playExplosion();
+        this.spawnHeavyExplosion(blastPos, 75);
+        this.spawnImpactParticles(blastPos, [0, 1, 0], [1.0, 0.45, 0.08, 1.0], 50);
+        this.spawnImpactParticles(blastPos, [0, 1, 0], [1.0, 0.90, 0.25, 1.0], 35);
 
-        if (nowSec - this.lastShotTime < cooldown) {
-            return false;
+        const destroyed = entityManager.detonateKamikazeStrike(blastPos, 5.5, directHitEntity);
+        if (destroyed.length > 0) {
+            this.hitMarkerTimer = 1.6;
+            const names = destroyed.map(d => d.roleName.toUpperCase()).join(', ');
+            this.hitMarkerText = `🎯 TARGET DESTROYED: ${names}`;
+            if (this.lockedEntity && destroyed.some(d => d.id === this.lockedEntity?.id)) {
+                this.clearLock();
+            }
         }
-        this.lastShotTime = nowSec;
-
-        const focus = this.updateTargetLock(camera, collisionSystem, entityManager, soundManager, 0.016, activeMapId);
-        const aimTarget = (focus.predictedLeadPoint && focus.lockState === 'LOCKED')
-            ? focus.predictedLeadPoint
-            : focus.targetPoint;
-
-        const pitchRad = droneRotDeg[1] * (Math.PI / 180.0);
-        const yawRad = droneRotDeg[2] * (Math.PI / 180.0);
-
-        const cy = Math.cos(yawRad), sy = Math.sin(yawRad);
-        const cp = Math.cos(pitchRad), sp = Math.sin(pitchRad);
-        const rightX = cy, rightZ = -sy;
-        const fwdX = sy * cp, fwdY = -sp, fwdZ = cy * cp;
-
-        const bulletSpeed = weaponMode === 'SNIPER_RAILGUN' ? 460.0 : 280.0;
-
-        const computeVel = (muzzle: [number, number, number]): [number, number, number] => {
-            const dx = aimTarget[0] - muzzle[0];
-            const dy = aimTarget[1] - muzzle[1];
-            const dz = aimTarget[2] - muzzle[2];
-            const len = Math.hypot(dx, dy, dz) || 1.0;
-            return [
-                (dx / len) * bulletSpeed,
-                (dy / len) * bulletSpeed,
-                (dz / len) * bulletSpeed
-            ];
-        };
-
-        const targetId = focus.lockedEntity ? focus.lockedEntity.id : undefined;
-        const homing = targetId ? 0.16 : 0.0;
-
-        if (weaponMode === 'SNIPER_RAILGUN') {
-            const centerMuzzle: [number, number, number] = [
-                dronePos[0] + fwdX * 0.60,
-                dronePos[1] + fwdY * 0.60 - 0.02,
-                dronePos[2] + fwdZ * 0.60
-            ];
-
-            this.projectiles.push({
-                pos: [...centerMuzzle],
-                prevPos: [...centerMuzzle],
-                vel: computeVel(centerMuzzle),
-                life: 3.5,
-                color: [0.75, 0.45, 1.0, 1.0],
-                kind: 'PLAYER_RAILGUN',
-                faction: 'PLAYER',
-                damage: 140,
-                targetEntityId: targetId,
-                homingStrength: homing,
-                isRailgun: true
-            });
-
-            soundManager.playRailgunShot();
-        } else {
-            const sideOffset = 0.40;
-            const m1Pos: [number, number, number] = [
-                dronePos[0] + fwdX * 0.45 - rightX * sideOffset,
-                dronePos[1] + fwdY * 0.45 - 0.05,
-                dronePos[2] + fwdZ * 0.45 - rightZ * sideOffset
-            ];
-            const m2Pos: [number, number, number] = [
-                dronePos[0] + fwdX * 0.45 + rightX * sideOffset,
-                dronePos[1] + fwdY * 0.45 - 0.05,
-                dronePos[2] + fwdZ * 0.45 + rightZ * sideOffset
-            ];
-
-            this.projectiles.push({
-                pos: [...m1Pos],
-                prevPos: [...m1Pos],
-                vel: computeVel(m1Pos),
-                life: 4.5,
-                color: [0.0, 1.0, 0.85, 1.0],
-                kind: 'PLAYER_PLASMA',
-                faction: 'PLAYER',
-                damage: 48,
-                targetEntityId: targetId,
-                homingStrength: homing
-            });
-
-            this.projectiles.push({
-                pos: [...m2Pos],
-                prevPos: [...m2Pos],
-                vel: computeVel(m2Pos),
-                life: 4.5,
-                color: [0.0, 1.0, 0.85, 1.0],
-                kind: 'PLAYER_PLASMA',
-                faction: 'PLAYER',
-                damage: 48,
-                targetEntityId: targetId,
-                homingStrength: homing
-            });
-
-            soundManager.playLaserShot();
-        }
-
-        return true;
+        return destroyed;
     }
 
     public update(
         dt: number,
         collisionSystem: CollisionSystem,
         entityManager: EntityManager,
-        missionManager: MissionManager,
+        _missionManager: MissionManager,
         soundManager: SoundManager,
         activeMapId: string = 'airfield',
         groundElevation: number = 0.0,
@@ -567,58 +451,14 @@ export class WeaponSystem {
             this.hitMarkerTimer -= dt;
         }
 
-        let activeSamTargetingDrone = false;
-
-        // 1. Guided Projectile Homing Steering & Ballistic Gravity
+        // 1. Update Battlefield Projectiles (Ambient Tank Shells, Tracers, Artillery)
         for (const p of this.projectiles) {
             if (p.gravity) {
                 p.vel[1] -= p.gravity * dt;
             }
 
-            if (p.targetsPlayerDrone && dronePos && p.homingStrength) {
-                activeSamTargetingDrone = true;
-                const toDrone = [
-                    dronePos[0] - p.pos[0],
-                    dronePos[1] - p.pos[1],
-                    dronePos[2] - p.pos[2]
-                ];
-                const dist = Math.hypot(toDrone[0], toDrone[1], toDrone[2]);
-                if (dist > 1.5) {
-                    const curSpeed = Math.hypot(p.vel[0], p.vel[1], p.vel[2]);
-                    const desiredVx = (toDrone[0] / dist) * curSpeed;
-                    const desiredVy = (toDrone[1] / dist) * curSpeed;
-                    const desiredVz = (toDrone[2] / dist) * curSpeed;
-                    const steerRate = Math.min(1.0, dt * 8.0 * p.homingStrength);
-                    p.vel[0] += (desiredVx - p.vel[0]) * steerRate;
-                    p.vel[1] += (desiredVy - p.vel[1]) * steerRate;
-                    p.vel[2] += (desiredVz - p.vel[2]) * steerRate;
-                }
-            } else if (p.targetEntityId && p.homingStrength) {
-                const target = entityManager.entities.find(e => e.id === p.targetEntityId && e.isAlive);
-                if (target) {
-                    const toTarget = [
-                        target.pos[0] - p.pos[0],
-                        (target.pos[1] + target.height * 0.5) - p.pos[1],
-                        target.pos[2] - p.pos[2]
-                    ];
-                    const dist = Math.hypot(toTarget[0], toTarget[1], toTarget[2]);
-                    if (dist > 1.0) {
-                        const curSpeed = Math.hypot(p.vel[0], p.vel[1], p.vel[2]);
-                        const desiredVx = (toTarget[0] / dist) * curSpeed;
-                        const desiredVy = (toTarget[1] / dist) * curSpeed;
-                        const desiredVz = (toTarget[2] / dist) * curSpeed;
-                        const steerRate = Math.min(1.0, dt * 12.0 * p.homingStrength);
-                        p.vel[0] += (desiredVx - p.vel[0]) * steerRate;
-                        p.vel[1] += (desiredVy - p.vel[1]) * steerRate;
-                        p.vel[2] += (desiredVz - p.vel[2]) * steerRate;
-                    }
-                }
-            }
-
-            // Emit continuous smoke trails for SAM missiles, RPGs, Tank shells, and Artillery
             if (p.smokeTrail && this.particles.length < 950 && Math.random() < 0.75) {
-                const isMissile = p.kind === 'SAM_MISSILE' || p.kind === 'RPG_ROCKET' || p.kind === 'HELI_ROCKET';
-                const smokeLife = isMissile ? 0.55 : 0.35;
+                const smokeLife = 0.35;
                 this.particles.push({
                     pos: [
                         p.pos[0] + (Math.random() - 0.5) * 0.25,
@@ -632,16 +472,14 @@ export class WeaponSystem {
                     ],
                     life: smokeLife,
                     maxLife: smokeLife,
-                    color: isMissile ? [0.78, 0.80, 0.84, 0.85] : [0.95, 0.55, 0.15, 0.9],
-                    size: isMissile ? 0.36 : 0.28,
+                    color: [0.95, 0.55, 0.15, 0.9],
+                    size: 0.28,
                     buoyancy: 1.5
                 });
             }
         }
 
-        entityManager.incomingSamWarning = activeSamTargetingDrone;
-
-        // 2. Update Projectiles & Check Collisions
+        // 2. Check Ambient Projectile Collisions
         for (let i = this.projectiles.length - 1; i >= 0; --i) {
             const p = this.projectiles[i];
             p.life -= dt;
@@ -655,91 +493,48 @@ export class WeaponSystem {
             p.pos[1] += p.vel[1] * dt;
             p.pos[2] += p.vel[2] * dt;
 
-            const isHeavyOrdnance =
-                p.kind === 'TANK_SHELL' ||
-                p.kind === 'ARTILLERY_SHELL' ||
-                p.kind === 'SAM_MISSILE' ||
-                p.kind === 'RPG_ROCKET' ||
-                p.kind === 'HELI_ROCKET';
+            const isHeavyOrdnance = p.kind === 'TANK_SHELL' || p.kind === 'ARTILLERY_SHELL';
 
-            // Check Ground Collision against true terrain height
             const pGroundY = collisionSystem.getGroundHeight(activeMapId, p.pos[0], p.pos[2], groundElevation);
             if (p.pos[1] <= pGroundY + 0.08) {
                 p.pos[1] = pGroundY + 0.08;
                 if (isHeavyOrdnance) {
-                    this.spawnHeavyExplosion(p.pos, 26);
+                    this.spawnHeavyExplosion(p.pos, 24);
                     if (dronePos) {
                         const d = Math.hypot(p.pos[0] - dronePos[0], p.pos[1] - dronePos[1], p.pos[2] - dronePos[2]);
                         soundManager.playBattlefieldExplosion(d);
                     }
                 } else {
-                    const pColor: [number, number, number, number] = p.isRailgun ? [0.8, 0.4, 1.0, 1.0] : [0.95, 0.7, 0.2, 1.0];
-                    this.spawnImpactParticles(p.pos, [0, 1, 0], pColor, p.isRailgun ? 14 : 6);
-                    if (p.faction === 'PLAYER') soundManager.playImpact();
+                    this.spawnImpactParticles(p.pos, [0, 1, 0], [0.95, 0.7, 0.2, 1.0], 5);
                 }
                 this.projectiles.splice(i, 1);
                 continue;
             }
 
-            // Check Building / Obstacle Collision
             const rayHit = collisionSystem.raycast(p.prevPos, p.pos);
             if (rayHit) {
                 if (isHeavyOrdnance) {
-                    this.spawnHeavyExplosion(rayHit.point, 24);
+                    this.spawnHeavyExplosion(rayHit.point, 20);
                 } else {
-                    const pColor: [number, number, number, number] = p.isRailgun ? [0.9, 0.5, 1.0, 1.0] : [0.4, 0.85, 1.0, 1.0];
-                    this.spawnImpactParticles(rayHit.point, rayHit.normal, pColor, p.isRailgun ? 16 : 8);
-                    if (p.faction === 'PLAYER') soundManager.playImpact();
+                    this.spawnImpactParticles(rayHit.point, rayHit.normal, [0.4, 0.85, 1.0, 1.0], 6);
                 }
                 this.projectiles.splice(i, 1);
                 continue;
             }
 
-            // Check Entity Collision (Tanks, SAMs, Soldiers, Helicopters, Jets)
-            const damage = p.damage ?? (p.isRailgun ? 120 : 45);
-            const entHit = entityManager.checkHit(p.prevPos, p.pos, damage, p.faction || 'PLAYER', p.shooterId);
+            const entHit = entityManager.checkHit(p.prevPos, p.pos, 0, p.faction, p.shooterId);
             if (entHit.hitEntity && entHit.hitPoint) {
-                const ent = entHit.hitEntity;
-                const wasKilled = !ent.isAlive;
-                const isPlayerShot = !p.faction || p.faction === 'PLAYER';
-
-                if (isPlayerShot) {
-                    this.hitMarkerTimer = 0.38;
-                    this.hitMarkerText = wasKilled
-                        ? `🎯 DESTROYED: ${ent.roleName.toUpperCase()}!`
-                        : (p.isRailgun ? `⚡ CRITICAL HIT: ${ent.roleName}` : `✕ HIT: ${ent.roleName}`);
-                }
-
-                if (wasKilled) {
-                    if (isPlayerShot) {
-                        missionManager.showNotification(`TARGET NEUTRALIZED: ${ent.roleName.toUpperCase()}`);
-                        soundManager.playExplosion();
-                    } else if (dronePos) {
-                        const d = Math.hypot(entHit.hitPoint[0] - dronePos[0], entHit.hitPoint[1] - dronePos[1], entHit.hitPoint[2] - dronePos[2]);
-                        soundManager.playBattlefieldExplosion(d);
-                    }
-
-                    const isHeavyVehicle = ent.type === 'TANK';
-                    this.spawnHeavyExplosion(entHit.hitPoint, isHeavyVehicle ? 55 : 28);
-
-                    if (this.lockedEntity?.id === ent.id) {
-                        this.clearLock(soundManager);
-                    }
+                if (isHeavyOrdnance) {
+                    this.spawnHeavyExplosion(entHit.hitPoint, 18);
                 } else {
-                    if (isHeavyOrdnance) {
-                        this.spawnHeavyExplosion(entHit.hitPoint, 20);
-                    } else {
-                        this.spawnImpactParticles(entHit.hitPoint, [0, 1, 0], [1.0, 0.9, 0.2, 1.0], isPlayerShot ? 12 : 6);
-                    }
-                    if (isPlayerShot) soundManager.playImpact();
+                    this.spawnImpactParticles(entHit.hitPoint, [0, 1, 0], [1.0, 0.9, 0.2, 1.0], 5);
                 }
-
                 this.projectiles.splice(i, 1);
                 continue;
             }
         }
 
-        // 3. Update Impact & Battlefield Particles
+        // 3. Update Impact & Explosion Particles
         for (let i = this.particles.length - 1; i >= 0; --i) {
             const part = this.particles[i];
             part.life -= dt;
@@ -779,17 +574,14 @@ export class WeaponSystem {
             let life = 0.35 + Math.random() * 0.45;
 
             if (rRoll < 0.45) {
-                // Bright fiery orange/red blast
                 color = [1.0, 0.38 + Math.random() * 0.3, 0.08, 1.0];
                 size = 0.45 + Math.random() * 0.35;
             } else if (rRoll < 0.75) {
-                // Rising dark warzone smoke
                 color = [0.22, 0.22, 0.24, 0.9];
                 size = 0.65 + Math.random() * 0.45;
                 buoyancy = 3.5;
                 life = 0.7 + Math.random() * 0.6;
             } else {
-                // White-hot shrapnel sparks
                 color = [1.0, 0.92, 0.35, 1.0];
                 size = 0.24;
             }

@@ -11,8 +11,8 @@ Provide a clean flight HUD for piloting and a dedicated **User Menu** for config
   - **Flight Speed Profile**: Switch between speed modes (Cruise, Sport, Turbo).
   - **Camera Perspective**: Switch between First-Person View (FPV) and Chase view.
   - **LiveKit Connection**: View WebRTC robot connection status and reconnect if needed.
-  - **Drone Recovery**: Reset the drone to the level spawn point.
+  - **Mission & Fleet Controls**: Deploy the next drone or restart the mission (resetting targets and drone fleet).
 
 ## In-Game Flight HUD
-- **Telemetry Readout**: Displays altitude, speed, heading, battery, and flight state.
-- **Targeting & Optics**: Displays the aiming reticle, target lock status, optical zoom overlay, and any AI vision bounding boxes received via LiveKit.
+- **Telemetry & Mission Readout**: Displays altitude, speed, heading, warhead status, targets destroyed (`Targets Hit / Total Targets`), remaining drone fleet (`Drones Remaining / Total Drones`), and mission score.
+- **Targeting & Optics**: Displays the kamikaze impact reticle, screen-space hostile target markers, target lock status, optical zoom overlay, and any AI vision bounding boxes received via LiveKit.
