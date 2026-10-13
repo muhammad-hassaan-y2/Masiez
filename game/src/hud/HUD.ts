@@ -59,8 +59,6 @@ export class HUD {
     private menuSpeedBtn!: HTMLButtonElement;
     private menuCameraBtn!: HTMLButtonElement;
     private menuLiveKitBtn!: HTMLButtonElement;
-    private menuLiveKitStatusBadge!: HTMLElement;
-    private menuLiveKitTeleopBadge!: HTMLElement;
     private livekitUrlInput!: HTMLInputElement;
 
     // Callbacks
@@ -804,10 +802,6 @@ export class HUD {
         lkHeader.innerHTML = `
             <span style="font-size: 13px; font-weight: 800; color: #00e5ff; letter-spacing: 1px;">📡 LIVEKIT ROBOTICS HUB</span>
         `;
-        this.menuLiveKitStatusBadge = document.createElement('span');
-        this.menuLiveKitStatusBadge.style.cssText = `font-size: 12px; font-weight: 800; color: #ffcc00;`;
-        this.menuLiveKitStatusBadge.innerText = 'CONNECTING...';
-        lkHeader.appendChild(this.menuLiveKitStatusBadge);
         livekitSection.appendChild(lkHeader);
 
         const lkDesc = document.createElement('div');
@@ -861,9 +855,6 @@ export class HUD {
             <span>TRACK: <b>drone-fpv (30 FPS WebRTC)</b></span>
             <span>DATA: <b>telemetry, teleop, mission</b></span>
         `;
-        this.menuLiveKitTeleopBadge = document.createElement('span');
-        this.menuLiveKitTeleopBadge.innerHTML = `TELEOP: <b style="color:#ffcc00">STANDBY</b>`;
-        lkDetailsRow.appendChild(this.menuLiveKitTeleopBadge);
         livekitSection.appendChild(lkDetailsRow);
 
         menuCard.appendChild(livekitSection);
@@ -1074,56 +1065,30 @@ export class HUD {
         // LiveKit Robotics RTC Status
         if (this.livekitStatusEl) {
             if (livekitMetrics) {
-                const teleopColor = livekitMetrics.teleopActive ? '#00ff88' : '#88ddff';
-                const teleopText = livekitMetrics.teleopActive ? 'REMOTE ACTIVE' : 'STANDBY';
-                if (this.menuLiveKitTeleopBadge) {
-                    this.menuLiveKitTeleopBadge.innerHTML = `TELEOP: <b style="color:${teleopColor}">${teleopText}</b>`;
-                }
-
                 if (livekitMetrics.status === 'streaming') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#00ff88;">● STREAMING [${livekitMetrics.room}]</b>`;
                     if (this.menuLiveKitBtn) {
                         this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#00ff88;">STREAMING (${livekitMetrics.room})</b>`;
-                    }
-                    if (this.menuLiveKitStatusBadge) {
-                        this.menuLiveKitStatusBadge.style.color = '#00ff88';
-                        this.menuLiveKitStatusBadge.innerText = `● STREAMING [${livekitMetrics.room}]`;
                     }
                 } else if (livekitMetrics.status === 'connected') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#00e5ff;">○ CONNECTED [${livekitMetrics.room}]</b>`;
                     if (this.menuLiveKitBtn) {
                         this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#00e5ff;">CONNECTED</b>`;
                     }
-                    if (this.menuLiveKitStatusBadge) {
-                        this.menuLiveKitStatusBadge.style.color = '#00e5ff';
-                        this.menuLiveKitStatusBadge.innerText = `○ CONNECTED [${livekitMetrics.room}]`;
-                    }
                 } else if (livekitMetrics.status === 'connecting') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#ffcc00;">CONNECTING...</b>`;
                     if (this.menuLiveKitBtn) {
                         this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#ffcc00;">CONNECTING...</b>`;
-                    }
-                    if (this.menuLiveKitStatusBadge) {
-                        this.menuLiveKitStatusBadge.style.color = '#ffcc00';
-                        this.menuLiveKitStatusBadge.innerText = 'CONNECTING...';
                     }
                 } else if (livekitMetrics.status === 'error') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#ff4444;">ERROR / STANDBY</b>`;
                     if (this.menuLiveKitBtn) {
                         this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#ff4444;">RECONNECT</b>`;
                     }
-                    if (this.menuLiveKitStatusBadge) {
-                        this.menuLiveKitStatusBadge.style.color = '#ff4444';
-                        this.menuLiveKitStatusBadge.innerText = 'DISCONNECTED / STANDBY';
-                    }
                 } else {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#888888;">STANDBY</b>`;
                     if (this.menuLiveKitBtn) {
                         this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#888888;">CONNECT</b>`;
-                    }
-                    if (this.menuLiveKitStatusBadge) {
-                        this.menuLiveKitStatusBadge.style.color = '#888888';
-                        this.menuLiveKitStatusBadge.innerText = 'DISCONNECTED';
                     }
                 }
             } else {
@@ -1146,21 +1111,12 @@ export class HUD {
                 const proj = camera.projectToScreen(targetPos, screenW, screenH);
                 if (!proj.visible) continue;
 
-                const dist = Math.hypot(
-                    ent.pos[0] - pos[0],
-                    ent.pos[1] - pos[1],
-                    ent.pos[2] - pos[2]
-                );
                 const isLocked = targetFocus?.lockedEntity?.id === ent.id;
                 const borderColor = isLocked ? '#ffcc00' : '#ff3355';
-                const tagText = `${ent.type} • ${dist.toFixed(0)}m`;
 
                 markersHtml += `
-                    <div style="position:absolute; left:${Math.round(proj.x)}px; top:${Math.round(proj.y)}px; transform:translate(-50%, -100%); display:flex; flex-direction:column; align-items:center; pointer-events:none;">
-                        <div style="background:rgba(25, 5, 10, 0.82); border:1px solid ${borderColor}; color:${borderColor}; font-size:10px; font-weight:800; padding:1px 6px; border-radius:4px; white-space:nowrap; letter-spacing:0.5px;">
-                            🎯 ${tagText}
-                        </div>
-                        <div style="width:8px; height:8px; border:2px solid ${borderColor}; transform:rotate(45deg); margin-top:3px;"></div>
+                    <div style="position:absolute; left:${Math.round(proj.x)}px; top:${Math.round(proj.y)}px; transform:translate(-50%, -50%); pointer-events:none;">
+                        <div style="width:10px; height:10px; border:2px solid ${borderColor}; transform:rotate(45deg);"></div>
                     </div>
                 `;
             }
@@ -1186,14 +1142,9 @@ export class HUD {
                     const top = Math.round(by * scaleY);
                     const width = Math.round(bw * scaleX);
                     const height = Math.round(bh * scaleY);
-                    const confPct = Math.round(det.confidence * 100);
 
                     html += `
-                        <div style="position:absolute; left:${left}px; top:${top}px; width:${width}px; height:${height}px; border:2px solid #00ff88; box-shadow:0 0 10px rgba(0,255,136,0.6); pointer-events:none;">
-                            <div style="position:absolute; top:-22px; left:-2px; background:rgba(0,30,15,0.85); color:#00ff88; font-size:11px; font-weight:800; padding:2px 6px; border:1px solid #00ff88; border-radius:3px; letter-spacing:0.5px; white-space:nowrap;">
-                                AI: ${det.label.toUpperCase()} [${confPct}%]
-                            </div>
-                        </div>
+                        <div style="position:absolute; left:${left}px; top:${top}px; width:${width}px; height:${height}px; border:2px solid #00ff88; box-shadow:0 0 10px rgba(0,255,136,0.6); pointer-events:none;"></div>
                     `;
                 }
                 this.aiVisionOverlayEl.innerHTML = html;
