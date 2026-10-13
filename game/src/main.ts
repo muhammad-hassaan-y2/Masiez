@@ -12,7 +12,6 @@ import { EntityManager } from './gameplay/EntityManager';
 import { WeaponSystem } from './gameplay/WeaponSystem';
 import { CombatRenderer } from './gpu/CombatRenderer';
 import { Camera } from './scene/Camera';
-import { CameraStreamer } from './camera/CameraStreamer';
 import { LiveKitRoboticsClient } from './network/LiveKitRoboticsClient';
 import { InputManager } from './input/InputManager';
 import { HUD } from './hud/HUD';
@@ -75,12 +74,11 @@ async function bootstrap() {
     const combatRenderer = new CombatRenderer(gpu);
     await combatRenderer.init();
 
-    // 5. Camera, Input, HUD, Streamer
+    // 5. Camera, Input, HUD, LiveKit Robot Link
     const camera = new Camera();
     camera.mode = 'FPV'; // Default to First Person Operator View
     const input = new InputManager(canvas);
     const hud = new HUD();
-    const cameraStreamer = new CameraStreamer(canvas);
     const livekit = new LiveKitRoboticsClient();
 
     // Flight Speed Modes & Dynamic Performance Profiles
@@ -329,9 +327,16 @@ async function bootstrap() {
         missionManager.showNotification(isMuted ? "AUDIO MUTED" : "AUDIO ACTIVE");
     };
 
-    input.onMapSelectKey = (idx: number) => {
-        if (idx >= 0 && idx < MAP_CATALOG.length) {
-            switchMap(MAP_CATALOG[idx]);
+    input.onUserMenuToggle = () => {
+        hud.toggleUserMenu();
+    };
+
+    hud.onMenuOpenChange = (isOpen: boolean) => {
+        input.isMenuOpen = isOpen;
+        if (isOpen && document.pointerLockElement) {
+            try {
+                document.exitPointerLock();
+            } catch (err) {}
         }
     };
 
@@ -363,7 +368,7 @@ async function bootstrap() {
         console.log("EMERGENCY STOP!");
     };
 
-    // HUD Button Handlers
+    // HUD & User Menu Button Handlers
     hud.onMapSelect = (mapDef) => {
         switchMap(mapDef);
     };
@@ -386,15 +391,6 @@ async function bootstrap() {
 
     hud.onLockTargetToggle = () => {
         input.onLockTarget();
-    };
-
-    input.onStreamToggle = () => {
-        const active = cameraStreamer.toggleStreaming();
-        missionManager.showNotification(active ? "CAM STREAM ACTIVATED (LIVE)" : "CAM STREAM PAUSED");
-    };
-
-    hud.onStreamToggle = () => {
-        input.onStreamToggle();
     };
 
     hud.onRecoverDrone = () => {
@@ -662,11 +658,11 @@ async function bootstrap() {
                 }
             }
 
-            // 3. Collision vs Moving Entities (Tanks, Military Craft, Soldier Battalions, Patrol Rovers, Target Drones)
+            // 3. Collision vs Moving Entities (Tanks and Soldier Battalions)
             if (!isCrashed) {
                 for (const ent of entityManager.entities) {
                     if (!ent.isAlive) continue;
-                    const entMinY = ent.pos[1] - (ent.type === 'FIGHTER_JET' || ent.type === 'ATTACK_HELI' ? ent.height * 0.5 : 0);
+                    const entMinY = ent.pos[1];
                     const entMaxY = ent.pos[1] + ent.height;
                     if (subPos[1] >= entMinY - 0.35 && subPos[1] <= entMaxY + 0.35) {
                         const dXZ = Math.hypot(subPos[0] - ent.pos[0], subPos[2] - ent.pos[2]);
@@ -691,7 +687,7 @@ async function bootstrap() {
         const isArmed = physics.isArmed();
         const mode = physics.getMode();
 
-        // 2. Update Real-Time Battlefield War AI (Tanks, SAMs, Soldier Battalions, Helicopters, Jets)
+        // 2. Update Real-Time Battlefield War AI (Tanks & Soldier Battalions)
         const warCallbacks = weaponSystem.createWarCallbacks(soundManager);
         entityManager.update(
             deltaSec,
@@ -700,7 +696,7 @@ async function bootstrap() {
             warCallbacks
         );
 
-        // 3. Update Drone Weapon System & Battlefield Ordnance (Tank Shells, SAM Missiles, Tracers, Artillery)
+        // 3. Update Drone Weapon System & Battlefield Ordnance (Tank Shells, Tracers, Artillery)
         weaponSystem.update(
             deltaSec,
             collisionSystem,
@@ -712,7 +708,7 @@ async function bootstrap() {
             pos
         );
 
-        // Check if a Hostile SAM Missile or Tank Shell directly hit the player's drone
+        // Check if a Hostile Tank Shell directly hit the player's drone
         if (!isCrashed) {
             for (let i = weaponSystem.projectiles.length - 1; i >= 0; --i) {
                 const pr = weaponSystem.projectiles[i];
@@ -720,7 +716,7 @@ async function bootstrap() {
                     const dDrone = Math.hypot(pr.pos[0] - pos[0], pr.pos[1] - pos[1], pr.pos[2] - pos[2]);
                     if (dDrone < 1.65) {
                         weaponSystem.projectiles.splice(i, 1);
-                        triggerCrash(`HIT BY HOSTILE ${pr.kind === 'SAM_MISSILE' ? 'SAM MISSILE' : 'TANK SHELL'}`, [pos[0], pos[1], pos[2]]);
+                        triggerCrash(`HIT BY HOSTILE ${pr.kind === 'SAM_MISSILE' ? 'MISSILE' : 'TANK SHELL'}`, [pos[0], pos[1], pos[2]]);
                         break;
                     }
                 }
@@ -774,7 +770,6 @@ async function bootstrap() {
             aimFocus,
             input.isPointerLocked,
             camera,
-            cameraStreamer.getMetrics(),
             livekit.getMetrics(),
             livekit.getLatestDetections(),
             {
@@ -890,22 +885,11 @@ async function bootstrap() {
             modelRenderer.render(renderPass, camera, pos, [-rot[0], rot[1], rot[2]], 2.0, timeSec);
         }
 
-        // 5. Draw Combat Elements: Moving Persons, Patrol Rover, Target Drones, Lasers & Explosions
+        // 4. Draw Combat Elements: Simple Box Tanks, Soldiers, Ordnance & Explosions
         combatRenderer.render(renderPass, camera, entityManager, weaponSystem, timeSec);
 
         renderPass.end();
         gpu.device.queue.submit([commandEncoder.finish()]);
-
-        // Camera Frame Streaming to Backend 1 & AI Agents
-        cameraStreamer.update(
-            ws,
-            camera,
-            now,
-            pos,
-            rot,
-            groundSpeed,
-            sensors.altitudeAGL
-        );
 
         requestAnimationFrame(frame);
     }

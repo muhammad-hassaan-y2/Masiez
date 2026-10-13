@@ -1,18 +1,9 @@
 export class TelemetryStore {
   private history: any[] = [];
   private latest: any = null;
-  private latestCameraFrame: any = null;
   private alertCallbacks: ((alert: any) => void)[] = [];
   private batteryThresholds = new Set<number>();
   private lastSensorHealth = true;
-
-  public setLatestCameraFrame(frame: any) {
-    this.latestCameraFrame = frame;
-  }
-
-  public getLatestCameraFrame() {
-    return this.latestCameraFrame;
-  }
 
   public update(telemetry: any) {
     if (!telemetry) return;

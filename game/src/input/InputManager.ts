@@ -20,14 +20,14 @@ export class InputManager {
     public onEmergencyStop: () => void = () => {};
     public onSpeedToggle: () => void = () => {};
     public onMuteToggle: () => void = () => {};
-    public onMapSelectKey: (mapIndex: number) => void = () => {};
+    public onUserMenuToggle: () => void = () => {};
     public onShoot: () => void = () => {};
     public onScopeToggle: () => void = () => {};
     public onScopeGearChange: (forward: boolean) => void = () => {};
     public onLockTarget: () => void = () => {};
-    public onStreamToggle: () => void = () => {};
 
     public isScoped: boolean = false;
+    public isMenuOpen: boolean = false;
 
     private keys: { [key: string]: boolean } = {};
     private canvas: HTMLCanvasElement;
@@ -37,6 +37,16 @@ export class InputManager {
 
         // Keyboard Controls
         window.addEventListener('keydown', (e) => {
+            if (e.code === 'Backquote' || e.key === '`' || e.key === '~') {
+                e.preventDefault();
+                this.onUserMenuToggle();
+                return;
+            }
+
+            if (this.isMenuOpen) {
+                return;
+            }
+
             this.keys[e.code] = true;
 
             if (e.code === KEY_BINDINGS.toggleArm) {
@@ -55,18 +65,6 @@ export class InputManager {
                 this.onScopeGearChange(true);
             } else if (e.code === 'KeyT') {
                 this.onLockTarget();
-            } else if (e.code === 'KeyK') {
-                this.onStreamToggle();
-            } else if (e.code === 'Digit1' || e.code === 'Numpad1' || e.key === '1') {
-                this.onMapSelectKey(0);
-            } else if (e.code === 'Digit2' || e.code === 'Numpad2' || e.key === '2') {
-                this.onMapSelectKey(1);
-            } else if (e.code === 'Digit3' || e.code === 'Numpad3' || e.key === '3') {
-                this.onMapSelectKey(2);
-            } else if (e.code === 'Digit4' || e.code === 'Numpad4' || e.key === '4') {
-                this.onMapSelectKey(3);
-            } else if (e.code === 'Digit5' || e.code === 'Numpad5' || e.key === '5') {
-                this.onMapSelectKey(4);
             } else if (e.code === 'KeyF' || e.code === 'KeyJ') {
                 this.isShooting = true;
                 this.onShoot();
@@ -89,6 +87,7 @@ export class InputManager {
         let lastY = 0;
 
         canvas.addEventListener('click', () => {
+            if (this.isMenuOpen) return;
             if (!this.isPointerLocked) {
                 try {
                     canvas.requestPointerLock();
@@ -101,6 +100,7 @@ export class InputManager {
         });
 
         window.addEventListener('mousedown', (e) => {
+            if (this.isMenuOpen) return;
             const onCanvas = (e.target === canvas || (e.target as HTMLElement).tagName === 'CANVAS');
             if (onCanvas) {
                 this.isMouseDown = true;

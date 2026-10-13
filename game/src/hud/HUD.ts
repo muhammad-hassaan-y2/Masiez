@@ -2,7 +2,6 @@ import { SensorOutput } from '../wasm/PhysicsBridge';
 import { MAP_CATALOG, MapDefinition } from '../gpu/CityMapRenderer';
 import { Camera } from '../scene/Camera';
 import { FocusTargetResult } from '../gameplay/WeaponSystem';
-import { CameraStreamMetrics } from '../camera/CameraStreamer';
 import { LiveKitMetrics, VisionDetection } from '../network/LiveKitRoboticsClient';
 
 export class HUD {
@@ -38,19 +37,35 @@ export class HUD {
     private fpvGimbalTiltEl!: HTMLElement | null;
     private fpvGpsCoordsEl!: HTMLElement | null;
 
-    // Map switcher & speed bar
-    private mapToolbar!: HTMLElement;
-    private mapButtons: Map<string, HTMLButtonElement> = new Map();
+    // Right-side status elements
     private speedModeEl!: HTMLElement;
     private audioEl!: HTMLElement;
     private scopeGearEl!: HTMLElement;
     private lockStatusEl!: HTMLElement;
-    private streamStatusEl!: HTMLElement;
     private livekitStatusEl!: HTMLElement;
+    private menuHintBtnEl!: HTMLElement;
     private aiVisionOverlayEl!: HTMLElement;
+
+    // User Menu (` Backquote) Modal & Controls
+    public isMenuOpen: boolean = false;
+    private userMenuOverlayEl!: HTMLElement;
+    private mapButtons: Map<string, HTMLButtonElement> = new Map();
+    private menuAudioBtn!: HTMLButtonElement;
+    private menuSpeedBtn!: HTMLButtonElement;
+    private menuCameraBtn!: HTMLButtonElement;
+    private menuLiveKitBtn!: HTMLButtonElement;
 
     // Callbacks
     public onLiveKitToggle?: () => void;
+    public onMenuOpenChange?: (isOpen: boolean) => void;
+    public onMapSelect?: (map: MapDefinition) => void;
+    public onCameraToggle?: () => void;
+    public onSpeedModeToggle?: () => void;
+    public onAudioToggle?: () => void;
+    public onScopeToggle?: () => void;
+    public onScopeGearToggle?: () => void;
+    public onLockTargetToggle?: () => void;
+    public onRecoverDrone?: () => void;
 
     // Precision Crosshair / Target Lock
     private reticleSvgEl!: SVGElement | null;
@@ -72,17 +87,6 @@ export class HUD {
     private loadingOverlay!: HTMLElement;
     private loadingText!: HTMLElement;
     private loadingBarFill!: HTMLElement;
-
-    // Callbacks
-    public onMapSelect?: (map: MapDefinition) => void;
-    public onCameraToggle?: () => void;
-    public onSpeedModeToggle?: () => void;
-    public onAudioToggle?: () => void;
-    public onScopeToggle?: () => void;
-    public onScopeGearToggle?: () => void;
-    public onLockTargetToggle?: () => void;
-    public onStreamToggle?: () => void;
-    public onRecoverDrone?: () => void;
 
     constructor() {
         this.container = document.createElement('div');
@@ -141,7 +145,7 @@ export class HUD {
         leftPanel.appendChild(this.spdEl);
         leftPanel.appendChild(this.hdgEl);
 
-        // Top Center: Map Switcher & Mission Objective
+        // Top Center: Tactical Operations Card & Notification Banner
         const centerCol = document.createElement('div');
         centerCol.style.cssText = `
             display: flex;
@@ -153,59 +157,6 @@ export class HUD {
             z-index: 100;
         `;
 
-        // Map Selection Toolbar
-        this.mapToolbar = document.createElement('div');
-        this.mapToolbar.style.cssText = `
-            display: flex;
-            gap: 8px;
-            background: rgba(8, 18, 28, 0.95);
-            backdrop-filter: blur(12px);
-            padding: 6px 12px;
-            border-radius: 20px;
-            border: 1px solid rgba(0, 255, 204, 0.55);
-            box-shadow: 0 4px 25px rgba(0,0,0,0.7);
-            pointer-events: auto;
-            position: relative;
-            z-index: 100;
-        `;
-
-        for (let i = 0; i < MAP_CATALOG.length; i++) {
-            const mapDef = MAP_CATALOG[i];
-            const btn = document.createElement('button');
-            btn.innerText = `[${i + 1}] ${mapDef.name.toUpperCase()}`;
-            btn.style.cssText = `
-                background: ${i === 0 ? 'rgba(0, 255, 204, 0.35)' : 'rgba(255, 255, 255, 0.08)'};
-                color: ${i === 0 ? '#fff' : '#00ffcc'};
-                border: 1px solid ${i === 0 ? '#00ffcc' : 'rgba(0, 255, 204, 0.25)'};
-                border-radius: 12px;
-                padding: 6px 14px;
-                font-size: 12px;
-                font-weight: 700;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                pointer-events: auto;
-                user-select: none;
-            `;
-            btn.onmousedown = (e) => {
-                e.stopPropagation();
-            };
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                this.setActiveMapButton(mapDef.id);
-                this.onMapSelect?.(mapDef);
-            };
-            btn.onmouseenter = () => {
-                btn.style.background = 'rgba(0, 255, 204, 0.45)';
-            };
-            btn.onmouseleave = () => {
-                const isActive = this.mapButtons.get(mapDef.id)?.classList.contains('active');
-                btn.style.background = isActive ? 'rgba(0, 255, 204, 0.35)' : 'rgba(255, 255, 255, 0.08)';
-            };
-            this.mapButtons.set(mapDef.id, btn);
-            this.mapToolbar.appendChild(btn);
-        }
-
-        // Tactical Airframe & Operations Card
         this.opsPanel = document.createElement('div');
         this.opsPanel.style.cssText = `
             background: rgba(10, 22, 34, 0.88);
@@ -228,7 +179,6 @@ export class HUD {
         this.opsPanel.appendChild(this.airframeStatusEl);
         this.opsPanel.appendChild(this.missionDescEl);
 
-        // Notification Banner
         this.notificationEl = document.createElement('div');
         this.notificationEl.style.cssText = `
             font-size: 14px;
@@ -240,7 +190,6 @@ export class HUD {
             transition: opacity 0.25s ease;
         `;
 
-        centerCol.appendChild(this.mapToolbar);
         centerCol.appendChild(this.opsPanel);
         centerCol.appendChild(this.notificationEl);
 
@@ -258,7 +207,7 @@ export class HUD {
             gap: 6px;
             font-size: 14px;
             font-weight: 600;
-            min-width: 200px;
+            min-width: 210px;
             pointer-events: auto;
         `;
 
@@ -298,14 +247,6 @@ export class HUD {
         `;
         this.lockStatusEl.onclick = () => this.onLockTargetToggle?.();
 
-        this.streamStatusEl = document.createElement('div');
-        this.streamStatusEl.style.cssText = `
-            color: #00ff88;
-            cursor: pointer;
-            padding: 2px 0;
-        `;
-        this.streamStatusEl.onclick = () => this.onStreamToggle?.();
-
         this.livekitStatusEl = document.createElement('div');
         this.livekitStatusEl.style.cssText = `
             color: #00e5ff;
@@ -323,6 +264,23 @@ export class HUD {
         `;
         this.audioEl.onclick = () => this.onAudioToggle?.();
 
+        this.menuHintBtnEl = document.createElement('div');
+        this.menuHintBtnEl.style.cssText = `
+            margin-top: 4px;
+            padding: 5px 10px;
+            border-radius: 6px;
+            background: rgba(0, 255, 204, 0.16);
+            border: 1px solid rgba(0, 255, 204, 0.5);
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 800;
+            text-align: center;
+            cursor: pointer;
+            letter-spacing: 0.8px;
+        `;
+        this.menuHintBtnEl.innerHTML = `[ \` ] USER MENU & SETTINGS`;
+        this.menuHintBtnEl.onclick = () => this.toggleUserMenu();
+
         rightPanel.appendChild(this.batEl);
         rightPanel.appendChild(this.gpsEl);
         rightPanel.appendChild(this.modeEl);
@@ -330,9 +288,9 @@ export class HUD {
         rightPanel.appendChild(this.speedModeEl);
         rightPanel.appendChild(this.scopeGearEl);
         rightPanel.appendChild(this.lockStatusEl);
-        rightPanel.appendChild(this.streamStatusEl);
         rightPanel.appendChild(this.livekitStatusEl);
         rightPanel.appendChild(this.audioEl);
+        rightPanel.appendChild(this.menuHintBtnEl);
 
         // AI Computer Vision Object Detection Overlay
         this.aiVisionOverlayEl = document.createElement('div');
@@ -374,20 +332,21 @@ export class HUD {
         `;
         controlsHint.innerHTML = `
             <span id="hud-pointer-status" style="color:#00ffcc; font-weight:bold;">[CLICK TO LOCK AIM]</span>
-            <span style="color:#ff3366;"><b>[LEFT-CLICK / F]</b> FIRE LASER</span>
-            <span style="color:#ff55cc;"><b>[RIGHT-CLICK / Z]</b> SCOPE GEAR</span>
+            <span style="color:#00ff88; cursor:pointer;" id="hud-menu-open-hint"><b>[\`]</b> USER MENU</span>
+            <span style="color:#ff3366;"><b>[LEFT-CLICK / F]</b> FIRE</span>
+            <span style="color:#ff55cc;"><b>[RIGHT-CLICK / Z]</b> SCOPE</span>
             <span style="color:#ffcc00;"><b>[T / MMB]</b> LOCK TARGET</span>
-            <span style="color:#00ff88;"><b>[K]</b> CAM STREAM</span>
             <span style="color:#00ffff; cursor:pointer;" id="hud-cam-toggle"><b>[V]</b> FPV/CHASE</span>
-            <span style="color:#ffaa66;"><b>[W / S / A / D]</b> MOVE FLIGHT</span>
-            <span style="color:#33ffdd;"><b>[Q / E]</b> TURN HEADING</span>
+            <span style="color:#ffaa66;"><b>[W / S / A / D]</b> MOVE</span>
+            <span style="color:#33ffdd;"><b>[Q / E]</b> TURN</span>
             <span style="color:#33ff99;"><b>[SHIFT]</b> CLIMB</span>
             <span style="color:#66ccff;"><b>[CTRL]</b> DESCEND</span>
-            <span style="color:#ff99bb;"><b>[R]</b> SPEED MODE</span>
         `;
         this.pointerStatusEl = controlsHint.querySelector('#hud-pointer-status');
         const camToggleBtn = controlsHint.querySelector('#hud-cam-toggle') as HTMLElement;
         if (camToggleBtn) camToggleBtn.onclick = () => this.onCameraToggle?.();
+        const menuOpenHintBtn = controlsHint.querySelector('#hud-menu-open-hint') as HTMLElement;
+        if (menuOpenHintBtn) menuOpenHintBtn.onclick = () => this.toggleUserMenu();
 
         // 3. Holographic Precision Reticle / Dynamic Lock Readout
         const crosshairContainer = document.createElement('div');
@@ -404,7 +363,6 @@ export class HUD {
         `;
         crosshairContainer.innerHTML = `
             <svg id="hud-reticle-svg" width="64" height="64" viewBox="0 0 64 64" style="transition: all 0.12s ease-out; opacity: 0.95;">
-                <!-- Precision Boresight Crosshair -->
                 <circle id="reticle-outer" cx="32" cy="32" r="20" fill="none" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="8 4" />
                 <circle id="reticle-inner" cx="32" cy="32" r="10" fill="none" stroke="#00ffcc" stroke-width="1.2" />
                 <line id="reticle-top" x1="32" y1="4" x2="32" y2="16" stroke="#00ffcc" stroke-width="2" />
@@ -598,25 +556,21 @@ export class HUD {
             font-family: monospace, -apple-system, sans-serif;
         `;
         this.fpvOsdContainer.innerHTML = `
-            <!-- 4 Viewfinder Corner Brackets -->
             <div style="position:absolute; top:18px; left:18px; width:40px; height:40px; border-top:2px solid rgba(0,255,204,0.7); border-left:2px solid rgba(0,255,204,0.7);"></div>
             <div style="position:absolute; top:18px; right:18px; width:40px; height:40px; border-top:2px solid rgba(0,255,204,0.7); border-right:2px solid rgba(0,255,204,0.7);"></div>
             <div style="position:absolute; bottom:66px; left:18px; width:40px; height:40px; border-bottom:2px solid rgba(0,255,204,0.7); border-left:2px solid rgba(0,255,204,0.7);"></div>
             <div style="position:absolute; bottom:66px; right:18px; width:40px; height:40px; border-bottom:2px solid rgba(0,255,204,0.7); border-right:2px solid rgba(0,255,204,0.7);"></div>
 
-            <!-- Top Left Live Feed & Sensor Spec -->
             <div style="position:absolute; top:78px; left:26px; font-size:12px; font-weight:700; color:#00ffcc; line-height:1.45; text-shadow:0 0 6px rgba(0,255,204,0.8);">
-                <div><span style="color:#ff3344; animation:pulse 1.2s infinite;">● REC</span> <span id="fpv-rec-timer">00:01:24</span> // 4K 60FPS</div>
+                <div><span style="color:#ff3344; animation:pulse 1.2s infinite;">● REC</span> <span id="fpv-rec-timer">00:01:24</span> // LIVEKIT WEBRTC</div>
                 <div style="color:#88ddff;">CAM SENSOR: ONBOARD GIMBAL FPV</div>
             </div>
 
-            <!-- Top Right RF Link & Latency -->
             <div style="position:absolute; top:78px; right:26px; text-align:right; font-size:12px; font-weight:700; color:#00ffcc; line-height:1.45; text-shadow:0 0 6px rgba(0,255,204,0.8);">
                 <div>RF LINK: <b style="color:#00ff88;">99% (5.8 GHz HD)</b></div>
-                <div style="color:#88ddff;">GCS LATENCY: <b>14ms</b> | CH: 1</div>
+                <div style="color:#88ddff;">ROBOT RTC: <b>DRONE ROOM</b></div>
             </div>
 
-            <!-- Top Center Sliding Compass Tape -->
             <div style="position:absolute; top:78px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;">
                 <div id="fpv-heading-tape" style="background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.45); border-radius:12px; padding:3px 18px; font-size:13px; font-weight:800; color:#00ffcc; letter-spacing:2px; box-shadow:0 0 10px rgba(0,255,204,0.3);">
                     [ 350 • N • 010 ]
@@ -624,71 +578,60 @@ export class HUD {
                 <div style="width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid #00ffcc; margin-top:2px;"></div>
             </div>
 
-            <!-- Central Artificial Horizon & Pitch Ladder -->
             <div id="fpv-horizon-group" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:280px; height:280px; pointer-events:none;">
                 <svg width="280" height="280" viewBox="0 0 280 280" style="overflow:visible;">
-                    <!-- Fixed Center Aircraft Reference (Amber Boresight) -->
                     <circle cx="140" cy="140" r="3" fill="#ffcc00" />
                     <line x1="108" y1="140" x2="128" y2="140" stroke="#ffcc00" stroke-width="2.5" />
                     <line x1="152" y1="140" x2="172" y2="140" stroke="#ffcc00" stroke-width="2.5" />
                     <line x1="140" y1="128" x2="140" y2="136" stroke="#ffcc00" stroke-width="2" />
 
-                    <!-- Moving Pitch Ladder (Tilts with roll, moves vertically with pitch) -->
                     <g id="fpv-pitch-ladder">
-                        <!-- +20 Deg -->
                         <line x1="90" y1="60" x2="120" y2="60" stroke="#00ffcc" stroke-width="1.8" />
                         <line x1="120" y1="60" x2="120" y2="68" stroke="#00ffcc" stroke-width="1.8" />
                         <line x1="160" y1="60" x2="190" y2="60" stroke="#00ffcc" stroke-width="1.8" />
                         <line x1="160" y1="60" x2="160" y2="68" stroke="#00ffcc" stroke-width="1.8" />
                         <text x="74" y="64" fill="#00ffcc" font-size="10" font-weight="bold">+20</text>
 
-                        <!-- +10 Deg -->
                         <line x1="100" y1="100" x2="124" y2="100" stroke="#00ffcc" stroke-width="1.8" />
                         <line x1="124" y1="100" x2="124" y2="106" stroke="#00ffcc" stroke-width="1.8" />
                         <line x1="156" y1="100" x2="180" y2="100" stroke="#00ffcc" stroke-width="1.8" />
                         <line x1="156" y1="100" x2="156" y2="106" stroke="#00ffcc" stroke-width="1.8" />
                         <text x="84" y="104" fill="#00ffcc" font-size="10" font-weight="bold">+10</text>
 
-                        <!-- 00 Deg Horizon Line -->
                         <line x1="80" y1="140" x2="114" y2="140" stroke="#00ffcc" stroke-width="2" />
                         <line x1="166" y1="140" x2="200" y2="140" stroke="#00ffcc" stroke-width="2" />
 
-                        <!-- -10 Deg -->
                         <line x1="100" y1="180" x2="124" y2="180" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="6 3" />
                         <line x1="124" y1="180" x2="124" y2="174" stroke="#00ffcc" stroke-width="1.8" />
                         <line x1="156" y1="180" x2="180" y2="180" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="6 3" />
                         <line x1="156" y1="180" x2="156" y2="174" stroke="#00ffcc" stroke-width="1.8" />
                         <text x="84" y="184" fill="#00ffcc" font-size="10" font-weight="bold">-10</text>
 
-                        <!-- -20 Deg -->
                         <line x1="90" y1="220" x2="120" y2="220" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="6 3" />
                         <line x1="120" y1="220" x2="120" y2="212" stroke="#00ffcc" stroke-width="1.8" />
-                        <line x1="160" y1="220" x2="190" y2="220" stroke="#00ffcc" stroke-width="1.8" stroke-dasharray="6 3" />
+                        <line x1="160" y1="220" x2="190" y2="220" stroke="#00ffcc" stroke-width="1.8" />
                         <line x1="160" y1="220" x2="160" y2="212" stroke="#00ffcc" stroke-width="1.8" />
                         <text x="74" y="224" fill="#00ffcc" font-size="10" font-weight="bold">-20</text>
                     </g>
                 </svg>
             </div>
 
-            <!-- Left Instrument Tape: Altitude Ladder & Vertical Speed -->
             <div style="position:absolute; left:26px; top:44%; transform:translateY(-50%); background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.35); border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); min-width:115px;">
                 <div style="font-size:10px; color:#88ddff; letter-spacing:1px; margin-bottom:2px;">ALTITUDE (AGL)</div>
                 <div id="fpv-alt-ladder" style="font-size:16px; font-weight:900; color:#00ff88;">0.0 m</div>
                 <div id="fpv-climb-rate" style="font-size:11px; color:#ffcc00; margin-top:2px;">▲ 0.0 m/s</div>
             </div>
 
-            <!-- Right Instrument Tape: Airspeed Ladder -->
             <div style="position:absolute; right:26px; top:44%; transform:translateY(-50%); background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.35); border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); min-width:115px; text-align:right;">
                 <div style="font-size:10px; color:#88ddff; letter-spacing:1px; margin-bottom:2px;">GROUND SPEED</div>
                 <div id="fpv-spd-ladder" style="font-size:16px; font-weight:900; color:#00ff88;">0.0 m/s</div>
                 <div id="fpv-spd-kmh" style="font-size:11px; color:#ffcc00; margin-top:2px;">0.0 km/h</div>
             </div>
 
-            <!-- Bottom OSD Bar: Gimbal Pitch, GPS Coordinates & Mode -->
             <div style="position:absolute; bottom:68px; left:50%; transform:translateX(-50%); display:flex; gap:18px; background:rgba(5,15,25,0.82); border:1px solid rgba(0,255,204,0.4); border-radius:14px; padding:6px 20px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); white-space:nowrap;">
                 <div id="fpv-gimbal-tilt" style="color:#ffcc00;">GIMBAL: 0°</div>
                 <div id="fpv-gps-coords" style="color:#88ddff;">GPS: 33.6000° N, 72.9000° E</div>
-                <div style="color:#00ff88;">OPERATOR FPV // [V] TOGGLE VIEW</div>
+                <div style="color:#00ff88;">OPERATOR FPV // [\`] USER MENU</div>
             </div>
         `;
 
@@ -702,11 +645,206 @@ export class HUD {
         this.fpvGimbalTiltEl = this.fpvOsdContainer.querySelector('#fpv-gimbal-tilt');
         this.fpvGpsCoordsEl = this.fpvOsdContainer.querySelector('#fpv-gps-coords');
 
+        // 9. User Menu Modal (Toggled with ` Backquote)
+        this.userMenuOverlayEl = document.createElement('div');
+        this.userMenuOverlayEl.id = 'hud-user-menu-overlay';
+        this.userMenuOverlayEl.style.cssText = `
+            position: absolute;
+            inset: 0;
+            background: rgba(4, 10, 18, 0.86);
+            backdrop-filter: blur(16px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 980;
+            pointer-events: auto;
+        `;
+
+        const menuCard = document.createElement('div');
+        menuCard.style.cssText = `
+            width: 580px;
+            max-width: 92vw;
+            background: rgba(10, 22, 36, 0.96);
+            border: 1px solid rgba(0, 255, 204, 0.55);
+            border-radius: 18px;
+            box-shadow: 0 12px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 255, 204, 0.25);
+            padding: 28px 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+            color: #e8f8f5;
+        `;
+
+        // Header
+        const headerRow = document.createElement('div');
+        headerRow.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(0, 255, 204, 0.25);
+            padding-bottom: 14px;
+        `;
+        headerRow.innerHTML = `
+            <div>
+                <div style="font-size: 20px; font-weight: 800; color: #00ffcc; letter-spacing: 1.5px;">USER MENU & SETTINGS</div>
+                <div style="font-size: 12px; color: #88bbaa; margin-top: 2px;">Press <b>[ \` ]</b> (Backquote) to resume flight</div>
+            </div>
+        `;
+        const closeMenuBtn = document.createElement('button');
+        closeMenuBtn.innerText = 'RESUME [ ` ]';
+        closeMenuBtn.style.cssText = `
+            background: rgba(0, 255, 204, 0.2);
+            color: #00ffcc;
+            border: 1px solid #00ffcc;
+            border-radius: 10px;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            letter-spacing: 1px;
+        `;
+        closeMenuBtn.onclick = () => this.toggleUserMenu(false);
+        headerRow.appendChild(closeMenuBtn);
+        menuCard.appendChild(headerRow);
+
+        // Section 1: Game Settings (Sound, Speed, Camera, LiveKit Robot Link, Recover)
+        const settingsSection = document.createElement('div');
+        settingsSection.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        `;
+        const settingsTitle = document.createElement('div');
+        settingsTitle.style.cssText = `
+            font-size: 13px;
+            font-weight: 800;
+            color: #88ddff;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+        `;
+        settingsTitle.innerText = 'Game & Drone Robot Settings';
+        settingsSection.appendChild(settingsTitle);
+
+        const settingsGrid = document.createElement('div');
+        settingsGrid.style.cssText = `
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        `;
+
+        const createSettingBtn = (label: string, onClick: () => void): HTMLButtonElement => {
+            const btn = document.createElement('button');
+            btn.innerHTML = label;
+            btn.style.cssText = `
+                background: rgba(255, 255, 255, 0.06);
+                color: #e8f8f5;
+                border: 1px solid rgba(0, 255, 204, 0.35);
+                border-radius: 10px;
+                padding: 12px 14px;
+                font-size: 13px;
+                font-weight: 700;
+                cursor: pointer;
+                text-align: left;
+                transition: all 0.15s ease;
+            `;
+            btn.onmouseenter = () => { btn.style.background = 'rgba(0, 255, 204, 0.22)'; };
+            btn.onmouseleave = () => { btn.style.background = 'rgba(255, 255, 255, 0.06)'; };
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                onClick();
+            };
+            return btn;
+        };
+
+        this.menuAudioBtn = createSettingBtn('SOUND / AUDIO: <b>ACTIVE</b>', () => this.onAudioToggle?.());
+        this.menuSpeedBtn = createSettingBtn('SPEED PROFILE: <b>CRUISE</b>', () => this.onSpeedModeToggle?.());
+        this.menuCameraBtn = createSettingBtn('CAMERA VIEW: <b>FPV</b>', () => this.onCameraToggle?.());
+        this.menuLiveKitBtn = createSettingBtn('LIVEKIT ROBOT: <b>CONNECTING</b>', () => this.onLiveKitToggle?.());
+
+        const recoverBtn = createSettingBtn('RECOVER / RESET DRONE TO BASE', () => {
+            this.onRecoverDrone?.();
+            this.toggleUserMenu(false);
+        });
+        recoverBtn.style.gridColumn = 'span 2';
+        recoverBtn.style.textAlign = 'center';
+        recoverBtn.style.color = '#00ffcc';
+
+        settingsGrid.appendChild(this.menuAudioBtn);
+        settingsGrid.appendChild(this.menuSpeedBtn);
+        settingsGrid.appendChild(this.menuCameraBtn);
+        settingsGrid.appendChild(this.menuLiveKitBtn);
+        settingsGrid.appendChild(recoverBtn);
+        settingsSection.appendChild(settingsGrid);
+        menuCard.appendChild(settingsSection);
+
+        // Section 2: Level / Map Selection (Changed only via User Menu, not during interactive gameplay)
+        const levelSection = document.createElement('div');
+        levelSection.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        `;
+        const levelTitle = document.createElement('div');
+        levelTitle.style.cssText = `
+            font-size: 13px;
+            font-weight: 800;
+            color: #88ddff;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+        `;
+        levelTitle.innerText = 'Select Level / Battlefield Sector';
+        levelSection.appendChild(levelTitle);
+
+        const levelGrid = document.createElement('div');
+        levelGrid.style.cssText = `
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        `;
+
+        for (let i = 0; i < MAP_CATALOG.length; i++) {
+            const mapDef = MAP_CATALOG[i];
+            const btn = document.createElement('button');
+            btn.innerText = `${mapDef.name.toUpperCase()}`;
+            btn.style.cssText = `
+                background: ${i === 0 ? 'rgba(0, 255, 204, 0.35)' : 'rgba(255, 255, 255, 0.08)'};
+                color: ${i === 0 ? '#fff' : '#00ffcc'};
+                border: 1px solid ${i === 0 ? '#00ffcc' : 'rgba(0, 255, 204, 0.25)'};
+                border-radius: 10px;
+                padding: 12px 14px;
+                font-size: 13px;
+                font-weight: 700;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                text-align: left;
+            `;
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                this.setActiveMapButton(mapDef.id);
+                this.onMapSelect?.(mapDef);
+                this.toggleUserMenu(false);
+            };
+            this.mapButtons.set(mapDef.id, btn);
+            levelGrid.appendChild(btn);
+        }
+
+        levelSection.appendChild(levelGrid);
+        menuCard.appendChild(levelSection);
+        this.userMenuOverlayEl.appendChild(menuCard);
+
         this.container.appendChild(topRow);
         this.container.appendChild(this.fpvOsdContainer);
         this.container.appendChild(controlsHint);
+        this.container.appendChild(this.userMenuOverlayEl);
         this.container.appendChild(this.crashOverlayEl);
         this.container.appendChild(this.loadingOverlay);
+    }
+
+    public toggleUserMenu(forceState?: boolean): boolean {
+        this.isMenuOpen = forceState !== undefined ? forceState : !this.isMenuOpen;
+        this.userMenuOverlayEl.style.display = this.isMenuOpen ? 'flex' : 'none';
+        this.onMenuOpenChange?.(this.isMenuOpen);
+        return this.isMenuOpen;
     }
 
     public setActiveMapButton(mapId: string): void {
@@ -754,7 +892,6 @@ export class HUD {
         targetFocus?: FocusTargetResult | null,
         isPointerLocked: boolean = false,
         camera?: Camera,
-        camMetrics?: CameraStreamMetrics,
         livekitMetrics?: LiveKitMetrics,
         aiDetections?: { detections: VisionDetection[]; width: number; height: number },
         warStats?: { alliedKills: number; hostileKills: number; latestLog: string; samWarning: boolean }
@@ -781,7 +918,7 @@ export class HUD {
 
         if (warStats && this.missionDescEl) {
             if (warStats.samWarning) {
-                this.missionDescEl.innerHTML = `<span style="color:#ff2244; font-weight:900;">⚠ RWR WARNING: INCOMING HOSTILE SAM MISSILE — EVADE!</span>`;
+                this.missionDescEl.innerHTML = `<span style="color:#ff2244; font-weight:900;">⚠ RWR WARNING: INCOMING HOSTILE TANK FIRE — EVADE!</span>`;
             } else {
                 this.missionDescEl.innerHTML = `<span style="color:#00e5ff;">⚔ ALLIED: ${warStats.alliedKills}</span> | <span style="color:#ff3355;">HOSTILE: ${warStats.hostileKills}</span> — <span style="color:#ffdd66;">${warStats.latestLog}</span>`;
             }
@@ -789,6 +926,17 @@ export class HUD {
 
         this.speedModeEl.innerHTML = `[R] SPEED: <b>${speedMode}</b>`;
         this.audioEl.innerHTML = `[M] AUDIO: <b>${isMuted ? '<span style="color:#ff6666">MUTED</span>' : 'ACTIVE'}</b>`;
+
+        // Sync User Menu Setting Buttons
+        if (this.menuAudioBtn) {
+            this.menuAudioBtn.innerHTML = `SOUND / AUDIO: <b style="color:${isMuted ? '#ff6666' : '#00ff88'};">${isMuted ? 'MUTED' : 'ACTIVE'}</b>`;
+        }
+        if (this.menuSpeedBtn) {
+            this.menuSpeedBtn.innerHTML = `SPEED PROFILE: <b style="color:#ffaa33;">${speedMode}</b>`;
+        }
+        if (this.menuCameraBtn) {
+            this.menuCameraBtn.innerHTML = `CAMERA VIEW: <b style="color:#00ffcc;">${camMode}</b>`;
+        }
 
         // Scope Gear & Target Lock Quick Status
         if (camera) {
@@ -807,28 +955,34 @@ export class HUD {
             this.lockStatusEl.innerHTML = `[T] LOCK: <b>STANDBY</b>`;
         }
 
-        // Camera Streaming Status
-        if (this.streamStatusEl) {
-            if (camMetrics?.isStreaming) {
-                this.streamStatusEl.innerHTML = `[K] STREAM: <b style="color:#00ff88;">● LIVE (${camMetrics.fps} FPS)</b>`;
-            } else {
-                this.streamStatusEl.innerHTML = `[K] STREAM: <b style="color:#888888;">○ PAUSED</b>`;
-            }
-        }
-
         // LiveKit Robotics RTC Status
         if (this.livekitStatusEl) {
             if (livekitMetrics) {
                 if (livekitMetrics.status === 'streaming') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#00ff88;">● STREAMING [${livekitMetrics.room}]</b>`;
+                    if (this.menuLiveKitBtn) {
+                        this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#00ff88;">STREAMING (${livekitMetrics.room})</b>`;
+                    }
                 } else if (livekitMetrics.status === 'connected') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#00e5ff;">○ CONNECTED [${livekitMetrics.room}]</b>`;
+                    if (this.menuLiveKitBtn) {
+                        this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#00e5ff;">CONNECTED</b>`;
+                    }
                 } else if (livekitMetrics.status === 'connecting') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#ffcc00;">CONNECTING...</b>`;
+                    if (this.menuLiveKitBtn) {
+                        this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#ffcc00;">CONNECTING...</b>`;
+                    }
                 } else if (livekitMetrics.status === 'error') {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#ff4444;">ERROR / STANDBY</b>`;
+                    if (this.menuLiveKitBtn) {
+                        this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#ff4444;">RECONNECT</b>`;
+                    }
                 } else {
                     this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#888888;">STANDBY</b>`;
+                    if (this.menuLiveKitBtn) {
+                        this.menuLiveKitBtn.innerHTML = `LIVEKIT ROBOT: <b style="color:#888888;">CONNECT</b>`;
+                    }
                 }
             } else {
                 this.livekitStatusEl.innerHTML = `LIVEKIT RTC: <b style="color:#888888;">STANDBY</b>`;
@@ -973,7 +1127,6 @@ export class HUD {
                 this.targetLockLabelEl.style.color = '#ff8800';
                 this.targetLockLabelEl.style.textShadow = '0 0 8px rgba(255, 136, 0, 0.8)';
             } else {
-                // Standby / Terrain targeting
                 this.reticleSvgEl.querySelectorAll('circle, line').forEach(el => {
                     (el as SVGElement).setAttribute('stroke', '#00ffcc');
                     if (el.tagName === 'circle' && el.getAttribute('fill') !== 'none') {
@@ -1001,13 +1154,12 @@ export class HUD {
             }
         }
 
-        // 9. Update Drone Operator First-Person View (FPV) OSD Interface
+        // Update Drone Operator First-Person View (FPV) OSD Interface
         const isFpvMode = (camera?.mode === 'FPV');
         if (this.fpvOsdContainer) {
             this.fpvOsdContainer.style.display = isFpvMode ? 'block' : 'none';
 
             if (isFpvMode) {
-                // Pitch Ladder & Horizon: tilts with roll (rot[0]), translates with pitch (rot[1])
                 if (this.fpvPitchLadderEl) {
                     const ladderPitchY = Math.max(-90, Math.min(90, rot[1] * 2.8));
                     const ladderRollDeg = -rot[0];
@@ -1017,7 +1169,6 @@ export class HUD {
                     );
                 }
 
-                // Top Compass Ribbon Tape
                 if (this.fpvHeadingTapeEl) {
                     const hdg = ((rot[2] % 360 + 360) % 360);
                     const cardinals = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -1028,7 +1179,6 @@ export class HUD {
                     this.fpvHeadingTapeEl.innerText = `[ ${leftHdg}° • ${cardStr} ${hdg.toFixed(0)}° • ${rightHdg}° ]`;
                 }
 
-                // Left & Right Instrument Tapes
                 if (this.fpvAltLadderEl) {
                     this.fpvAltLadderEl.innerText = `${sensors.altitudeAGL.toFixed(1)} m`;
                 }
@@ -1045,7 +1195,6 @@ export class HUD {
                     this.fpvSpdKmhEl.innerText = `${(groundSpeed * 3.6).toFixed(0)} km/h`;
                 }
 
-                // Running Camera Recording Clock
                 if (this.fpvRecTimerEl) {
                     const elapsedSec = Math.floor(performance.now() / 1000);
                     const mm = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
@@ -1053,7 +1202,6 @@ export class HUD {
                     this.fpvRecTimerEl.innerText = `${mm}:${ss}`;
                 }
 
-                // Gimbal Pitch & GPS Coordinates
                 if (this.fpvGimbalTiltEl && camera) {
                     const gimbalPitchDeg = -(camera.mouseOrbitPitch * (180 / Math.PI) - 16).toFixed(0);
                     this.fpvGimbalTiltEl.innerText = `GIMBAL: ${gimbalPitchDeg}°`;

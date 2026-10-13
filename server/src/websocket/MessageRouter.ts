@@ -19,9 +19,6 @@ export class MessageRouter {
         const data = message.telemetry || message.payload;
         this.telemetryStore.update(data);
         wsServer.broadcastToAI({ type: 'ai:telemetry', payload: data });
-      } else if (message.type === 'game:camera_frame') {
-        this.telemetryStore.setLatestCameraFrame(message);
-        wsServer.broadcastToAI({ type: 'ai:camera_frame', payload: message });
       }
     } else if (message.type.startsWith('user:')) {
       if (message.type === 'user:chat') {

@@ -719,7 +719,7 @@ export class WeaponSystem {
                         soundManager.playBattlefieldExplosion(d);
                     }
 
-                    const isHeavyVehicle = ent.type === 'TANK' || ent.type === 'MISSILE_TRUCK' || ent.type === 'ATTACK_HELI' || ent.type === 'FIGHTER_JET';
+                    const isHeavyVehicle = ent.type === 'TANK';
                     this.spawnHeavyExplosion(entHit.hitPoint, isHeavyVehicle ? 55 : 28);
 
                     if (this.lockedEntity?.id === ent.id) {
