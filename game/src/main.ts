@@ -13,6 +13,8 @@ import { WeaponSystem } from './gameplay/WeaponSystem';
 import { CombatRenderer } from './gpu/CombatRenderer';
 import { Camera } from './scene/Camera';
 import { LiveKitRoboticsClient } from './network/LiveKitRoboticsClient';
+import { BrowserAIController } from './ai/BrowserAIController';
+import { AiMode } from './ai/types';
 import { InputManager } from './input/InputManager';
 import { HUD } from './hud/HUD';
 import { Telemetry, DroneFlightState, FlightMode, GPSFixType, SensorStatus } from 'drone-autonomy-shared';
@@ -80,6 +82,7 @@ async function bootstrap() {
     const input = new InputManager(canvas);
     const hud = new HUD();
     const livekit = new LiveKitRoboticsClient();
+    const browserAI = new BrowserAIController();
 
     // Flight Speed Modes & Dynamic Performance Profiles
     const speedModes: SpeedMode[] = ['CRUISE', 'SPORT', 'TURBO'];
@@ -455,14 +458,20 @@ async function bootstrap() {
         input.onCameraToggle();
     };
 
-    // 5. Connect to LiveKit Robotics SFU (WebRTC Video Streaming, Low-Latency Data Channels & RPC)
-    livekit.connect(canvas).then(ok => {
-        if (ok) {
-            missionManager.showNotification("LIVEKIT ROBOTICS: STREAMING FPV [WEBRTC]");
-        }
-    }).catch(err => {
-        console.warn("[LiveKit] Init notice:", err);
-    });
+    // LiveKit is an ALTERNATIVE transport (models run in-browser by default).
+    // It never auto-connects; operators enable it from the User Menu, and the
+    // RPC methods below become live the moment a connection is established.
+    hud.onAiModeToggle = () => {
+        const order: AiMode[] = ['OFF', 'DETECT', 'FOLLOW'];
+        const next = order[(order.indexOf(browserAI.getMode()) + 1) % order.length];
+        browserAI.setMode(next);
+        missionManager.showNotification(
+            next === 'OFF'
+                ? "IN-BROWSER AI: OFF (MANUAL FLIGHT)"
+                : `IN-BROWSER AI: ${next}${next === 'FOLLOW' ? ' — DETECT & PURSUE TARGETS' : ' — DETECTION OVERLAY ONLY'}`
+        );
+        soundManager.playTargetAcquired();
+    };
 
     // Register Full Suite of LiveKit Robotics RPC Methods (for Jupyter / Kaggle / Remote Operators)
     livekit.registerRpc('teleop.takeoff', async (params) => {
@@ -636,8 +645,17 @@ async function bootstrap() {
         // Input update & Mouse Look / Zoom
         input.update();
 
-        // Check if remote teleoperator from LiveKit DataChannel is actively steering
+        // Control arbitration: remote LiveKit teleop > in-browser AI follow > human keyboard
         const isRemoteTeleoperating = livekit.isTeleoperating();
+        const aiAxes = browserAI.update(deltaSec, {
+            canvas,
+            camera,
+            physics,
+            entityManager,
+            isCrashed,
+            humanInputActive: input.hasAnyFlightInput(),
+        });
+
         let inThrottle = input.throttle;
         let inPitch = input.pitch;
         let inRoll = input.roll;
@@ -651,6 +669,16 @@ async function bootstrap() {
             inYaw = livekit.teleopAxes.yaw;
 
             if (!physics.isArmed() && !isCrashed && (Math.abs(inThrottle) > 0.05 || Math.abs(inPitch) > 0.05 || Math.abs(inRoll) > 0.05)) {
+                physics.arm(true);
+            }
+        } else if (aiAxes && !isCrashed) {
+            // In-browser autonomy (RT-DETR + PPO over ONNX Runtime Web) is flying
+            inThrottle = aiAxes.throttle;
+            inPitch = aiAxes.pitch;
+            inRoll = aiAxes.roll;
+            inYaw = aiAxes.yaw;
+
+            if (!physics.isArmed() && (Math.abs(inThrottle) > 0.05 || Math.abs(inPitch) > 0.05 || Math.abs(inRoll) > 0.05)) {
                 physics.arm(true);
             }
         } else if (input.hasAnyFlightInput() && !physics.isArmed() && !isCrashed) {
@@ -921,10 +949,12 @@ async function bootstrap() {
             input.isPointerLocked,
             camera,
             livekit.getMetrics(),
-            livekit.getLatestDetections(),
+            browserAI.getDetectionsForHud() ?? livekit.getLatestDetections(),
             missionManager.getStats(),
             entityManager.getAliveHostileTargets()
         );
+
+        hud.setAiDisplay(browserAI.getMode(), browserAI.getStatus());
 
         // Send telemetry to server & LiveKit DataChannel at 10Hz
         if (now - lastTelemetrySend >= 100) {

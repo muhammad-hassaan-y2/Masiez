@@ -5,6 +5,7 @@ import { FocusTargetResult } from '../gameplay/WeaponSystem';
 import { BaseEntity } from '../gameplay/EntityManager';
 import { KamikazeMissionStats } from '../gameplay/MissionManager';
 import { LiveKitMetrics, VisionDetection } from '../network/LiveKitRoboticsClient';
+import { AiMode, AiStatusInfo } from '../ai/types';
 
 export class HUD {
     private container: HTMLElement;
@@ -47,6 +48,7 @@ export class HUD {
     private scopeGearEl!: HTMLElement;
     private lockStatusEl!: HTMLElement;
     private livekitStatusEl!: HTMLElement;
+    private aiStatusEl!: HTMLElement;
     private menuHintBtnEl!: HTMLElement;
     private aiVisionOverlayEl!: HTMLElement;
     private targetMarkersOverlayEl!: HTMLElement;
@@ -60,10 +62,12 @@ export class HUD {
     private menuSpeedBtn!: HTMLButtonElement;
     private menuCameraBtn!: HTMLButtonElement;
     private menuLiveKitBtn!: HTMLButtonElement;
+    private menuAiBtn!: HTMLButtonElement;
     private livekitUrlInput!: HTMLInputElement;
 
     // Callbacks
     public onLiveKitToggle?: (customUrl?: string) => void;
+    public onAiModeToggle?: () => void;
     public onMenuOpenChange?: (isOpen: boolean) => void;
     public onMapSelect?: (map: MapDefinition) => void;
     public onCameraToggle?: () => void;
@@ -265,6 +269,16 @@ export class HUD {
         `;
         this.livekitStatusEl.onclick = () => this.onLiveKitToggle?.();
 
+        this.aiStatusEl = document.createElement('div');
+        this.aiStatusEl.style.cssText = `
+            color: #00ff88;
+            cursor: pointer;
+            padding: 2px 0;
+            font-size: 13px;
+        `;
+        this.aiStatusEl.innerHTML = `AI (BROWSER): <b style="color:#888888;">OFF</b>`;
+        this.aiStatusEl.onclick = () => this.onAiModeToggle?.();
+
         this.audioEl = document.createElement('div');
         this.audioEl.style.cssText = `
             color: #00ffcc;
@@ -297,6 +311,7 @@ export class HUD {
         rightPanel.appendChild(this.speedModeEl);
         rightPanel.appendChild(this.scopeGearEl);
         rightPanel.appendChild(this.lockStatusEl);
+        rightPanel.appendChild(this.aiStatusEl);
         rightPanel.appendChild(this.livekitStatusEl);
         rightPanel.appendChild(this.audioEl);
         rightPanel.appendChild(this.menuHintBtnEl);
@@ -769,7 +784,8 @@ export class HUD {
         this.menuAudioBtn = createSettingBtn('SOUND / AUDIO: <b>ACTIVE</b>', () => this.onAudioToggle?.());
         this.menuSpeedBtn = createSettingBtn('SPEED PROFILE: <b>CRUISE</b>', () => this.onSpeedModeToggle?.());
         this.menuCameraBtn = createSettingBtn('CAMERA VIEW: <b>FPV</b>', () => this.onCameraToggle?.());
-        this.menuLiveKitBtn = createSettingBtn('LIVEKIT ROBOT: <b>CONNECTING</b>', () => this.onLiveKitToggle?.());
+        this.menuLiveKitBtn = createSettingBtn('LIVEKIT ROBOT: <b>STANDBY</b>', () => this.onLiveKitToggle?.());
+        this.menuAiBtn = createSettingBtn('IN-BROWSER AI: <b>OFF</b>', () => this.onAiModeToggle?.());
 
         const restartMissionBtn = createSettingBtn('RESTART MISSION (RESET TARGETS & DRONES)', () => {
             this.onRestartMission?.();
@@ -782,6 +798,7 @@ export class HUD {
         settingsGrid.appendChild(this.menuAudioBtn);
         settingsGrid.appendChild(this.menuSpeedBtn);
         settingsGrid.appendChild(this.menuCameraBtn);
+        settingsGrid.appendChild(this.menuAiBtn);
         settingsGrid.appendChild(this.menuLiveKitBtn);
         settingsGrid.appendChild(restartMissionBtn);
         settingsSection.appendChild(settingsGrid);
@@ -1332,6 +1349,25 @@ export class HUD {
                     this.fpvGpsCoordsEl.innerText = `GPS: ${sensors.latitude.toFixed(4)}° N, ${sensors.longitude.toFixed(4)}° E`;
                 }
             }
+        }
+    }
+
+    /** Right-panel AI chip + User Menu AI button state */
+    public setAiDisplay(mode: AiMode, status: AiStatusInfo): void {
+        if (this.aiStatusEl) {
+            if (mode === 'OFF') {
+                this.aiStatusEl.innerHTML = `AI (BROWSER): <b style="color:#888888;">OFF</b>`;
+            } else if (mode === 'DETECT') {
+                this.aiStatusEl.innerHTML = `AI (BROWSER): <b style="color:#00e5ff;">DETECT</b> [${status.detections}]`;
+            } else {
+                const flying = status.following ? '<b style="color:#00ff88;">FOLLOWING</b>' : '<b style="color:#ffcc00;">SEEKING</b>';
+                this.aiStatusEl.innerHTML = `AI (BROWSER): ${flying} [${status.detections}] ${status.inferenceMs.toFixed(0)}ms`;
+            }
+        }
+        if (this.menuAiBtn) {
+            const color = mode === 'OFF' ? '#888888' : (mode === 'DETECT' ? '#00e5ff' : '#00ff88');
+            this.menuAiBtn.innerHTML =
+                `IN-BROWSER AI: <b style="color:${color};">${mode}</b> — ${status.detector} / ${status.policy}`;
         }
     }
 }

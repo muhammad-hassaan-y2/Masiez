@@ -1,10 +1,7 @@
-import { Room, RoomEvent, Track, VideoPresets } from 'livekit-client';
+import { Room, RoomEvent, Track } from 'livekit-client';
+import { VisionDetection } from '../ai/types';
 
-export interface VisionDetection {
-    label: string;
-    bbox: [number, number, number, number]; // [x, y, w, h] in image pixels
-    confidence: number;
-}
+export type { VisionDetection };
 
 export interface VisionAnnotationsPayload {
     type: 'ai:vision_annotations';
