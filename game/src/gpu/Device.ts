@@ -65,8 +65,10 @@ export class GPUDeviceContext {
     }
 
     public resize(): void {
-        const width = Math.max(1, window.innerWidth);
-        const height = Math.max(1, window.innerHeight);
+        // Render at native device resolution (capped) for crisp HiDPI/Retina display
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const width = Math.max(1, Math.round(window.innerWidth * dpr));
+        const height = Math.max(1, Math.round(window.innerHeight * dpr));
 
         this.canvas.width = width;
         this.canvas.height = height;

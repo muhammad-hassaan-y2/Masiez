@@ -18,6 +18,10 @@ export class CollisionSystem {
     private aabbs: AABB[] = [];
     private cylinders: CylinderObstacle[] = [];
 
+    public get colliderCount(): number {
+        return this.aabbs.length + this.cylinders.length;
+    }
+
     constructor() {
         this.initAirfieldColliders();
     }

@@ -50,6 +50,7 @@ export class HUD {
     private menuHintBtnEl!: HTMLElement;
     private aiVisionOverlayEl!: HTMLElement;
     private targetMarkersOverlayEl!: HTMLElement;
+    private lastAiDetectionsRef: VisionDetection[] | null = null;
 
     // User Menu (` Backquote) Modal & Controls
     public isMenuOpen: boolean = false;
@@ -1125,31 +1126,39 @@ export class HUD {
             this.targetMarkersOverlayEl.innerHTML = '';
         }
 
-        // Render AI Vision Detection Bounding Boxes from LiveKit DataChannel
+        // Render AI Vision Detection Bounding Boxes (in-browser model or LiveKit annotations)
         if (this.aiVisionOverlayEl) {
-            if (aiDetections && aiDetections.detections && aiDetections.detections.length > 0) {
-                const screenW = window.innerWidth;
-                const screenH = window.innerHeight;
-                const srcW = aiDetections.width || 640;
-                const srcH = aiDetections.height || 360;
-                const scaleX = screenW / srcW;
-                const scaleY = screenH / srcH;
+            const detections = aiDetections?.detections ?? null;
+            if (detections !== this.lastAiDetectionsRef) {
+                this.lastAiDetectionsRef = detections;
+                if (detections && detections.length > 0) {
+                    const screenW = window.innerWidth;
+                    const screenH = window.innerHeight;
+                    const srcW = aiDetections!.width || 640;
+                    const srcH = aiDetections!.height || 360;
+                    const scaleX = screenW / srcW;
+                    const scaleY = screenH / srcH;
 
-                let html = '';
-                for (const det of aiDetections.detections) {
-                    const [bx, by, bw, bh] = det.bbox;
-                    const left = Math.round(bx * scaleX);
-                    const top = Math.round(by * scaleY);
-                    const width = Math.round(bw * scaleX);
-                    const height = Math.round(bh * scaleY);
+                    let html = '';
+                    for (const det of detections) {
+                        const [bx, by, bw, bh] = det.bbox;
+                        const left = Math.round(bx * scaleX);
+                        const top = Math.round(by * scaleY);
+                        const width = Math.round(bw * scaleX);
+                        const height = Math.round(bh * scaleY);
+                        const label = (det.label || 'TARGET').toUpperCase();
+                        const safeLabel = label.replace(/[^A-Z0-9 _-]/g, '').slice(0, 24);
 
-                    html += `
-                        <div style="position:absolute; left:${left}px; top:${top}px; width:${width}px; height:${height}px; border:2px solid #00ff88; box-shadow:0 0 10px rgba(0,255,136,0.6); pointer-events:none;"></div>
-                    `;
+                        html += `
+                            <div style="position:absolute; left:${left}px; top:${top}px; width:${width}px; height:${height}px; border:2px solid #00ff88; box-shadow:0 0 10px rgba(0,255,136,0.6); pointer-events:none;">
+                                <div style="position:absolute; top:-18px; left:-2px; background:rgba(0,20,10,0.85); color:#00ff88; font-size:10px; font-weight:700; letter-spacing:1px; padding:1px 5px; white-space:nowrap;">${safeLabel} ${(det.confidence * 100).toFixed(0)}%</div>
+                            </div>
+                        `;
+                    }
+                    this.aiVisionOverlayEl.innerHTML = html;
+                } else {
+                    this.aiVisionOverlayEl.innerHTML = '';
                 }
-                this.aiVisionOverlayEl.innerHTML = html;
-            } else {
-                this.aiVisionOverlayEl.innerHTML = '';
             }
         }
 

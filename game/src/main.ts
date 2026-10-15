@@ -333,7 +333,7 @@ async function bootstrap() {
             `SECTOR DEPLOYED: ${mapDef.name.toUpperCase()} — DESTROY ${missionManager.totalTargets} TARGETS (${missionManager.totalDrones} DRONES)`
         );
 
-        console.log(`[Game] Switched to map: ${mapDef.name} (${collisionSystem['aabbs']?.length || 0} AABB colliders, ${collisionSystem['cylinders']?.length || 0} cylinders)`);
+        console.log(`[Game] Switched to map: ${mapDef.name} (${collisionSystem.colliderCount} colliders)`);
     }
 
     // Input Handlers
@@ -626,6 +626,9 @@ async function bootstrap() {
     const physicsDt = 1.0 / 250.0;
     let lastTelemetrySend = 0;
 
+    // War AI effect callbacks are allocated once, not per frame
+    const warCallbacks = weaponSystem.createWarCallbacks(soundManager);
+
     function frame(now: number) {
         const deltaSec = Math.min((now - lastTime) / 1000.0, 0.1);
         lastTime = now;
@@ -790,7 +793,7 @@ async function bootstrap() {
                 }
                 if (subVel[1] < 0) subVel[1] = 0;
                 // If landed on ground and neutral, stabilize upright
-                if (!isCrashed && input.throttle <= 0 && Math.hypot(input.pitch, input.roll) <= 0.05) {
+                if (!isCrashed && inThrottle <= 0 && Math.hypot(inPitch, inRoll) <= 0.05) {
                     currentRollDeg *= 0.85;
                     currentPitchDeg *= 0.85;
                     physics.setRotation(currentRollDeg, currentPitchDeg, masterHeadingDeg);
@@ -835,7 +838,6 @@ async function bootstrap() {
         const mode = physics.getMode();
 
         // 2. Update Real-Time Battlefield War AI (Tanks & Soldier Battalions)
-        const warCallbacks = weaponSystem.createWarCallbacks(soundManager);
         entityManager.update(
             deltaSec,
             pos,
