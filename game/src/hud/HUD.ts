@@ -6,6 +6,7 @@ import { BaseEntity } from '../gameplay/EntityManager';
 import { KamikazeMissionStats } from '../gameplay/MissionManager';
 import { LiveKitMetrics, VisionDetection } from '../network/LiveKitRoboticsClient';
 import { AiMode, AiStatusInfo } from '../ai/types';
+import type { WorldStateMsg } from 'drone-autonomy-shared';
 
 export class HUD {
     private container: HTMLElement;
@@ -49,6 +50,7 @@ export class HUD {
     private lockStatusEl!: HTMLElement;
     private livekitStatusEl!: HTMLElement;
     private aiStatusEl!: HTMLElement;
+    private realtimeStatusEl!: HTMLElement;
     private menuHintBtnEl!: HTMLElement;
     private aiVisionOverlayEl!: HTMLElement;
     private targetMarkersOverlayEl!: HTMLElement;
@@ -63,11 +65,13 @@ export class HUD {
     private menuCameraBtn!: HTMLButtonElement;
     private menuLiveKitBtn!: HTMLButtonElement;
     private menuAiBtn!: HTMLButtonElement;
+    private menuRealtimeBtn!: HTMLButtonElement;
     private livekitUrlInput!: HTMLInputElement;
 
     // Callbacks
     public onLiveKitToggle?: (customUrl?: string) => void;
     public onAiModeToggle?: () => void;
+    public onRealtimeToggle?: () => void;
     public onMenuOpenChange?: (isOpen: boolean) => void;
     public onMapSelect?: (map: MapDefinition) => void;
     public onCameraToggle?: () => void;
@@ -287,6 +291,16 @@ export class HUD {
         `;
         this.audioEl.onclick = () => this.onAudioToggle?.();
 
+        this.realtimeStatusEl = document.createElement('div');
+        this.realtimeStatusEl.style.cssText = `
+            color: #ff9500;
+            cursor: pointer;
+            padding: 2px 0;
+            font-size: 13px;
+        `;
+        this.realtimeStatusEl.innerHTML = `BACKEND DRONE: <b style="color:#888888;">LOCAL</b>`;
+        this.realtimeStatusEl.onclick = () => this.onRealtimeToggle?.();
+
         this.menuHintBtnEl = document.createElement('div');
         this.menuHintBtnEl.style.cssText = `
             margin-top: 4px;
@@ -312,6 +326,7 @@ export class HUD {
         rightPanel.appendChild(this.scopeGearEl);
         rightPanel.appendChild(this.lockStatusEl);
         rightPanel.appendChild(this.aiStatusEl);
+        rightPanel.appendChild(this.realtimeStatusEl);
         rightPanel.appendChild(this.livekitStatusEl);
         rightPanel.appendChild(this.audioEl);
         rightPanel.appendChild(this.menuHintBtnEl);
@@ -786,6 +801,7 @@ export class HUD {
         this.menuCameraBtn = createSettingBtn('CAMERA VIEW: <b>FPV</b>', () => this.onCameraToggle?.());
         this.menuLiveKitBtn = createSettingBtn('LIVEKIT ROBOT: <b>STANDBY</b>', () => this.onLiveKitToggle?.());
         this.menuAiBtn = createSettingBtn('IN-BROWSER AI: <b>OFF</b>', () => this.onAiModeToggle?.());
+        this.menuRealtimeBtn = createSettingBtn('BACKEND DRONE: <b>ON (REALTIME)</b>', () => this.onRealtimeToggle?.());
 
         const restartMissionBtn = createSettingBtn('RESTART MISSION (RESET TARGETS & DRONES)', () => {
             this.onRestartMission?.();
@@ -799,6 +815,7 @@ export class HUD {
         settingsGrid.appendChild(this.menuSpeedBtn);
         settingsGrid.appendChild(this.menuCameraBtn);
         settingsGrid.appendChild(this.menuAiBtn);
+        settingsGrid.appendChild(this.menuRealtimeBtn);
         settingsGrid.appendChild(this.menuLiveKitBtn);
         settingsGrid.appendChild(restartMissionBtn);
         settingsSection.appendChild(settingsGrid);
@@ -1368,6 +1385,27 @@ export class HUD {
             const color = mode === 'OFF' ? '#888888' : (mode === 'DETECT' ? '#00e5ff' : '#00ff88');
             this.menuAiBtn.innerHTML =
                 `IN-BROWSER AI: <b style="color:${color};">${mode}</b> — ${status.detector} / ${status.policy}`;
+        }
+    }
+
+    /** Right-panel backend-realtime chip + User Menu realtime toggle button */
+    public setRealtimeDisplay(enabled: boolean, snap: WorldStateMsg | null, latencyMs: number): void {
+        if (!this.realtimeStatusEl || !this.menuRealtimeBtn) return;
+        if (!enabled) {
+            this.realtimeStatusEl.innerHTML = `BACKEND DRONE: <b style="color:#888888;">LOCAL</b>`;
+            this.menuRealtimeBtn.innerHTML = `BACKEND DRONE: <b style="color:#888888;">OFF (LOCAL SIM)</b>`;
+            return;
+        }
+        if (snap) {
+            const st = snap.drone.crashed ? 'DESTROYED' : (snap.drone.armed ? 'IN FLIGHT' : 'GROUNDED');
+            const stColor = snap.drone.crashed ? '#ff3355' : (snap.drone.armed ? '#00ff88' : '#ffcc00');
+            this.realtimeStatusEl.innerHTML =
+                `BACKEND DRONE: <b style="color:#00ff88;">● 50Hz</b> [${st}] ${latencyMs.toFixed(0)}ms`;
+            this.menuRealtimeBtn.innerHTML =
+                `BACKEND DRONE: <b style="color:#00ff88;">REALTIME</b> — ${stColor ? st : st} @ ${snap.serverTime.toString().slice(-6)} · ${snap.targets.length} hostiles tracked · score ${snap.mission.score}`;
+        } else {
+            this.realtimeStatusEl.innerHTML = `BACKEND DRONE: <b style="color:#ffcc00;">○ WAITING FOR SERVER</b>`;
+            this.menuRealtimeBtn.innerHTML = `BACKEND DRONE: <b style="color:#ffcc00;">ON — AWAITING SNAPSHOTS</b>`;
         }
     }
 }

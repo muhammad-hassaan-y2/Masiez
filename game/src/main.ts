@@ -18,8 +18,8 @@ import { AiMode } from './ai/types';
 import { InputManager } from './input/InputManager';
 import { HUD } from './hud/HUD';
 import { Telemetry, DroneFlightState, FlightMode, GPSFixType, SensorStatus } from 'drone-autonomy-shared';
-
-type SpeedMode = 'CRUISE' | 'SPORT' | 'TURBO';
+import { REALTIME, SPEED_MODES, SPEED_PROFILES, SERVER } from 'drone-autonomy-shared';
+import type { SpeedMode, WorldStateMsg, WorldTargetState } from 'drone-autonomy-shared';
 
 async function bootstrap() {
     console.log("=== Initializing Masiez C++ / WebGPU Kamikaze FPV Drone Simulation ===");
@@ -84,45 +84,10 @@ async function bootstrap() {
     const livekit = new LiveKitRoboticsClient();
     const browserAI = new BrowserAIController();
 
-    // Flight Speed Modes & Dynamic Performance Profiles
-    const speedModes: SpeedMode[] = ['CRUISE', 'SPORT', 'TURBO'];
+    // Flight Speed Modes & Dynamic Performance Profiles (shared with the authoritative backend sim)
+    const speedModes = SPEED_MODES as unknown as SpeedMode[];
     let speedModeIndex = 0;
-
-    interface SpeedProfile {
-        maxSpeed: number;       // Top horizontal speed (m/s)
-        climbSpeed: number;     // Vertical climb speed (m/s)
-        descentSpeed: number;   // Controlled descent speed (m/s)
-        accelRate: number;      // Acceleration sharpness (1/s)
-        brakeRate: number;      // Air brake deceleration sharpness (1/s)
-        maxTiltDeg: number;     // Visual banking and pitch tilt limit (degrees)
-    }
-
-    const speedProfiles: Record<SpeedMode, SpeedProfile> = {
-        'CRUISE': {
-            maxSpeed: 20.0,      // ~72 km/h: Smooth, stable, agile exploration & target aiming
-            climbSpeed: 8.5,     // Responsive vertical climb
-            descentSpeed: 6.0,   // Controlled descent
-            accelRate: 20.0,     // 0.25s snappy response
-            brakeRate: 16.0,     // Crisp stop without glide
-            maxTiltDeg: 22.0,    // Stable tilt
-        },
-        'SPORT': {
-            maxSpeed: 36.0,      // ~130 km/h: High-performance tactical attack dive
-            climbSpeed: 16.0,    // Rapid evasive climb
-            descentSpeed: 11.0,  // Fast dive descent
-            accelRate: 25.0,     // Punchy instant acceleration
-            brakeRate: 20.0,     // Instant air-brakes
-            maxTiltDeg: 32.0,    // Aggressive racing banking
-        },
-        'TURBO': {
-            maxSpeed: 55.0,      // ~198 km/h: Terminal kamikaze sprint across vast maps
-            climbSpeed: 26.0,    // Rocket-like vertical burst
-            descentSpeed: 16.0,  // High-speed terminal dive
-            accelRate: 30.0,     // Hypersonic racer throttle
-            brakeRate: 24.0,     // Authoritative air-brakes
-            maxTiltDeg: 42.0,    // Extreme high-g racing tilt
-        },
-    };
+    const speedProfiles = SPEED_PROFILES;
 
     let currentRollDeg = 0;
     let currentPitchDeg = 0;
@@ -177,6 +142,20 @@ async function bootstrap() {
             mission: stats,
         });
 
+        // Report strike to the authoritative backend world (mission mirror + replay/leaderboard feed)
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'game:world_cmd',
+                action: 'strike',
+                strike: {
+                    reason,
+                    pos: [crashPt[0], crashPt[1], crashPt[2]],
+                    destroyedTargets: destroyedTargets.map(t => ({ id: t.id, roleName: t.roleName })),
+                    mission: stats,
+                },
+            }));
+        }
+
         const curVel = physics.getVelocity();
         physics.setVelocity(curVel[0] * 0.12, Math.min(curVel[1], -1.5), curVel[2] * 0.12);
         currentRollDeg += (Math.random() - 0.5) * 80;
@@ -191,6 +170,8 @@ async function bootstrap() {
     function deployNextDrone() {
         isCrashed = false;
         crashReason = "";
+        poseA = null;
+        poseB = null; // fresh airframe: accept the new authoritative pose cleanly
         physics.setMode('MANUAL');
         physics.resetPosition(currentMapDef.spawnPos[0], currentMapDef.spawnPos[1], currentMapDef.spawnPos[2]);
         physics.setVelocity(0, 0, 0);
@@ -209,6 +190,9 @@ async function bootstrap() {
         missionManager.showNotification(
             `🚀 FPV DRONE #${droneNum} ARMED (${missionManager.dronesRemaining}/${missionManager.totalDrones} LEFT) — TARGETS: ${missionManager.targetsHit}/${missionManager.totalTargets}`
         );
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'game:world_cmd', action: 'deploy' }));
+        }
         console.log(`[Drone] Deployed FPV Drone #${droneNum} at base (${missionManager.dronesRemaining} remaining)`);
     }
 
@@ -223,6 +207,9 @@ async function bootstrap() {
         missionManager.showNotification(
             `🎯 NEW MISSION: DESTROY ${missionManager.totalTargets} HOSTILE TARGETS (${missionManager.totalDrones} KAMIKAZE DRONES)`
         );
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'game:world_cmd', action: 'reset' }));
+        }
     }
 
     function handleRecoverOrRestart() {
@@ -235,6 +222,84 @@ async function bootstrap() {
         } else {
             deployNextDrone();
         }
+    }
+
+    // Backend WebSocket (connected below, referenced by world commands above)
+    let ws: WebSocket | null = null;
+
+    // ============================================================
+    // Backend Authoritative Realtime Drone Link
+    // The server integrates the drone flight model at REALTIME.simTickHz
+    // from streamed control axes. When enabled, this client reconciles its
+    // physics to the authoritative pose each snapshot and extrapolates
+    // locally between them, so the rendered drone IS the backend drone.
+    // ============================================================
+    let realtimeEnabled = (localStorage.getItem('masiez.realtime') ?? '1') === '1';
+    let worldSnap: WorldStateMsg | null = null;
+    let lastSnapServerTime = 0;
+    let snapLatencyMs = 0;
+    let lastAxesSend = 0;
+    let lastRealtimeDisplay = 0;
+    let poseA: { pos: [number, number, number]; vel: [number, number, number]; t: number } | null = null;
+    let poseB: { pos: [number, number, number]; vel: [number, number, number]; t: number; serverCrashed?: boolean } | null = null;
+    let worldSnapReceiveMs = 0;
+
+    function realtimeActive(): boolean {
+        return realtimeEnabled && worldSnap !== null && performance.now() - worldSnapReceiveMs < 1500;
+    }
+
+    function applyWorldSnapshot(msg: WorldStateMsg) {
+        const fresh = msg.serverTime > lastSnapServerTime;
+        if (!fresh) return;
+        lastSnapServerTime = msg.serverTime;
+        snapLatencyMs = Math.max(0, Date.now() - msg.serverTime);
+        worldSnap = msg;
+        worldSnapReceiveMs = performance.now();
+
+        // Server-side redeploy (crash resolved authoritatively): re-seed local crash visuals
+        const wasServerCrashed = poseB?.serverCrashed === true;
+        if (!msg.drone.crashed) {
+            // Fresh authoritative pose (new drone or recovery): drop stale interpolation buffers
+            poseA = null;
+        }
+        poseB = { pos: [...msg.drone.pos] as [number, number, number], vel: [...msg.drone.vel] as [number, number, number], t: performance.now(), serverCrashed: msg.drone.crashed };
+        if (wasServerCrashed && !msg.drone.crashed && !isCrashed) {
+            deployNextDrone();
+        }
+
+        const serverIdx = speedModes.indexOf(msg.drone.speedMode);
+        if (serverIdx >= 0 && !isCrashed) speedModeIndex = serverIdx;
+    }
+
+    /** Interpolated authoritative pose, or null to fall back to local physics. */
+    function realtimePose(): { pos: [number, number, number]; vel: [number, number, number]; headingRad: number; rollDeg: number; pitchDeg: number; batteryPct: number } | null {
+        // Local physics keeps control while the airframe is a wreck (fall animation)
+        // or while the onboard C++ autopilot is flying.
+        if (isCrashed || physics.getMode() !== 'MANUAL') return null;
+        if (!realtimeActive() || !poseB) return null;
+        if (!poseA) {
+            return {
+                pos: poseB.pos, vel: poseB.vel,
+                headingRad: worldSnap!.drone.headingRad,
+                rollDeg: worldSnap!.drone.rollDeg,
+                pitchDeg: worldSnap!.drone.pitchDeg,
+                batteryPct: worldSnap!.drone.batteryPct,
+            };
+        }
+        const ageSec = (performance.now() - poseB.t) / 1000;
+        const clampedAge = Math.min(ageSec, 0.25); // light extrapolation cap for smoothness
+        const p: [number, number, number] = [
+            poseB.pos[0] + poseB.vel[0] * clampedAge,
+            poseB.pos[1] + poseB.vel[1] * clampedAge,
+            poseB.pos[2] + poseB.vel[2] * clampedAge,
+        ];
+        return {
+            pos: p, vel: poseB.vel,
+            headingRad: worldSnap!.drone.headingRad,
+            rollDeg: worldSnap!.drone.rollDeg,
+            pitchDeg: worldSnap!.drone.pitchDeg,
+            batteryPct: worldSnap!.drone.batteryPct,
+        };
     }
 
     // Active Map Management: Start directly on Tactical Airfield Runway (Original First Map)
@@ -337,6 +402,21 @@ async function bootstrap() {
         );
 
         console.log(`[Game] Switched to map: ${mapDef.name} (${collisionSystem.colliderCount} colliders)`);
+
+        // Reconfigure the authoritative backend world for this sector
+        const apiBase = window.location.port === '5173'
+            ? `${window.location.protocol}//${window.location.hostname || 'localhost'}:3001`
+            : window.location.origin;
+        fetch(`${apiBase}${SERVER.apiBasePath}/world/config`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mapId: mapDef.id,
+                spawn: mapDef.spawnPos,
+                groundElevation: mapDef.groundElevation,
+                worldRadius: 950,
+            }),
+        }).catch(() => {});
     }
 
     // Input Handlers
@@ -473,6 +553,22 @@ async function bootstrap() {
         soundManager.playTargetAcquired();
     };
 
+    hud.onRealtimeToggle = () => {
+        realtimeEnabled = !realtimeEnabled;
+        localStorage.setItem('masiez.realtime', realtimeEnabled ? '1' : '0');
+        if (!realtimeEnabled) {
+            worldSnap = null;
+            poseA = null;
+            poseB = null;
+        }
+        missionManager.showNotification(
+            realtimeEnabled
+                ? "🛰 BACKEND DRONE: REALTIME — server 50Hz authoritative flight model"
+                : "🖥 BACKEND DRONE: LOCAL — client-side physics only"
+        );
+        soundManager.playTargetAcquired();
+    };
+
     // Register Full Suite of LiveKit Robotics RPC Methods (for Jupyter / Kaggle / Remote Operators)
     livekit.registerRpc('teleop.takeoff', async (params) => {
         physics.arm(true);
@@ -588,7 +684,6 @@ async function bootstrap() {
     };
 
     // 6. Connect to Backend 1 (WebSocket)
-    let ws: WebSocket | null = null;
     function connectWS() {
         try {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -601,7 +696,13 @@ async function bootstrap() {
             ws.onmessage = (e) => {
                 try {
                     const msg = JSON.parse(e.data);
-                    if (msg.type === 'server:command') {
+                    if (msg.type === 'world:state') {
+                        applyWorldSnapshot(msg as WorldStateMsg);
+                    } else if (msg.type === 'world:event') {
+                        if (msg.kind === 'GEOFENCE_CLAMP' || msg.kind === 'INPUT_LOST' || msg.kind === 'BATTERY_CRITICAL') {
+                            missionManager.showNotification(`⚠ BACKEND: ${msg.message}`);
+                        }
+                    } else if (msg.type === 'server:command') {
                         const cmd = msg.command;
                         console.log("Received server command:", cmd);
                         if (cmd.type === 'arm_and_takeoff') {
@@ -629,6 +730,23 @@ async function bootstrap() {
     }
     connectWS();
 
+    // Configure the authoritative backend world for the initial sector
+    {
+        const apiBase = window.location.port === '5173'
+            ? `${window.location.protocol}//${window.location.hostname || 'localhost'}:3001`
+            : window.location.origin;
+        fetch(`${apiBase}/api/v1/world/config`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mapId: currentMapDef.id,
+                spawn: currentMapDef.spawnPos,
+                groundElevation: currentMapDef.groundElevation,
+                worldRadius: 950,
+            }),
+        }).catch(() => {});
+    }
+
     // 6. Game Loop: Fixed Timestep Physics (250Hz) + WebGPU Render
     let lastTime = performance.now();
     let physicsAccumulator = 0;
@@ -637,6 +755,65 @@ async function bootstrap() {
 
     // War AI effect callbacks are allocated once, not per frame
     const warCallbacks = weaponSystem.createWarCallbacks(soundManager);
+
+    // Ground clamp, structure collision & entity strike passes, shared by the
+    // local 250Hz path and the backend-authoritative single-pass path.
+    function runCollisionPass(
+        subPos: [number, number, number],
+        subVel: [number, number, number],
+        prevPos: [number, number, number],
+        prevVelY: number,
+        axes: { throttle: number; pitch: number; roll: number },
+        masterHeadingDeg: number
+    ): void {
+        const groundY = collisionSystem.getGroundHeight(
+            currentMapDef.id,
+            subPos[0],
+            subPos[2],
+            currentMapDef.groundElevation
+        );
+        const minGroundY = groundY + REALTIME.landingClearanceM; // Drone landing clearance buffer
+        if (subPos[1] < minGroundY) {
+            subPos[1] = minGroundY;
+            // Severe downward impact or extreme tilt into ground -> Kamikaze Detonation
+            if (!isCrashed && (prevVelY < REALTIME.impactVelY || Math.abs(currentPitchDeg) > REALTIME.impactTiltDeg || Math.abs(currentRollDeg) > REALTIME.impactTiltDeg)) {
+                triggerKamikazeDetonation("HIGH-SPEED GROUND IMPACT", [subPos[0], minGroundY, subPos[2]], null);
+            }
+            if (subVel[1] < 0) subVel[1] = 0;
+            // If landed on ground and neutral, stabilize upright
+            if (!isCrashed && axes.throttle <= 0 && Math.hypot(axes.pitch, axes.roll) <= 0.05) {
+                currentRollDeg *= 0.85;
+                currentPitchDeg *= 0.85;
+                physics.setRotation(currentRollDeg, currentPitchDeg, masterHeadingDeg);
+            }
+        }
+
+        // Strict Continuous Collision vs Buildings & Structures -> DETONATES ON IMPACT
+        const col = collisionSystem.resolveDroneCollision(subPos, subVel, 0.45, prevPos, groundY);
+        if (col.hit && !isCrashed) {
+            triggerKamikazeDetonation(col.obstacleName || 'OBSTACLE / STRUCTURE', [subPos[0], subPos[1], subPos[2]], null);
+        }
+
+        // Collision vs Moving Entities (Hostile Tanks & Soldiers) -> DIRECT KAMIKAZE STRIKE
+        if (!isCrashed) {
+            for (const ent of entityManager.entities) {
+                if (!ent.isAlive) continue;
+                const entMinY = ent.pos[1];
+                const entMaxY = ent.pos[1] + ent.height;
+                if (subPos[1] >= entMinY - 0.45 && subPos[1] <= entMaxY + 0.45) {
+                    const dXZ = Math.hypot(subPos[0] - ent.pos[0], subPos[2] - ent.pos[2]);
+                    if (dXZ < 0.55 + ent.radius) {
+                        triggerKamikazeDetonation(ent.roleName.toUpperCase(), [subPos[0], subPos[1], subPos[2]], ent);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Vertical velocity from the previous authoritative pose, used to detect
+    // lethal descent (impact) while the backend owns the airframe.
+    let lastAuthVelY = 0;
 
     function frame(now: number) {
         const deltaSec = Math.min((now - lastTime) / 1000.0, 0.1);
@@ -685,6 +862,18 @@ async function bootstrap() {
             physics.arm(true);
         }
 
+        // Stream resolved control axes to the authoritative backend sim (30Hz)
+        if (realtimeEnabled && ws && ws.readyState === WebSocket.OPEN && now - lastAxesSend >= 1000 / REALTIME.axesStreamHz) {
+            lastAxesSend = now;
+            if (!isCrashed) {
+                ws.send(JSON.stringify({
+                    type: 'game:axes',
+                    axes: { throttle: inThrottle, pitch: inPitch, roll: inRoll, yaw: inYaw, headingDeg: camera.mouseOrbitYaw * (180.0 / Math.PI) },
+                    timestamp: Date.now(),
+                }));
+            }
+        }
+
         const mouse = input.consumeMouseDelta();
         const zoom = input.consumeMouseZoom();
         camera.applyMouseDelta(mouse.dx, mouse.dy, zoom);
@@ -709,151 +898,135 @@ async function bootstrap() {
         const currentSpeedMode = speedModes[speedModeIndex];
         const profile = speedProfiles[currentSpeedMode];
 
+        // Authoritative backend pose overrides local integration when realtime link is healthy
+        const rtPose = realtimePose();
+
         // Direct master heading (in degrees) from camera mouse orientation
         const masterHeadingDeg = camera.mouseOrbitYaw * (180.0 / Math.PI);
-        if (!isCrashed) {
+        if (rtPose) {
+            physics.setPosition(rtPose.pos[0], rtPose.pos[1], rtPose.pos[2]);
+            physics.setVelocity(rtPose.vel[0], rtPose.vel[1], rtPose.vel[2]);
+            physics.setRotation(rtPose.rollDeg, rtPose.pitchDeg, masterHeadingDeg);
+            currentRollDeg = rtPose.rollDeg;
+            currentPitchDeg = rtPose.pitchDeg;
+        } else if (!isCrashed) {
             physics.setManualInput(inThrottle, inPitch, inRoll, masterHeadingDeg);
         } else {
             physics.setManualInput(0, 0, 0, masterHeadingDeg);
         }
 
-        // Fixed-timestep C++ simulation steps (250Hz sub-stepping with high-agility movement, continuous collision & ground clamp)
+        // Two simulation paths:
+        //  • backend-authoritative — the server's 50Hz flight model owns pos/vel;
+        //    WASM is stepped once per frame only to derive sensors & motor RPMs,
+        //    then authority is restored so the rendered drone IS the backend drone.
+        //  • local — the C++ WASM engine substeps at 250Hz with JS dynamics assist.
         physicsAccumulator += deltaSec;
 
-        while (physicsAccumulator >= physicsDt) {
+        if (rtPose) {
             const prevPos = physics.getPosition();
-            const prevVelY = physics.getVelocity()[1];
-            physics.step(physicsDt);
-            physicsAccumulator -= physicsDt;
+            const prevVelY = lastAuthVelY;
+            physics.step(Math.min(deltaSec, 0.05)); // sensor + RPM derivation only
+            const subPos: [number, number, number] = [rtPose.pos[0], rtPose.pos[1], rtPose.pos[2]];
+            const subVel: [number, number, number] = [rtPose.vel[0], rtPose.vel[1], rtPose.vel[2]];
 
-            const subPos = physics.getPosition();
-            const subVel = physics.getVelocity();
-
-            // When armed, NOT crashed, and in MANUAL flight mode: apply responsive flight dynamics assist
-            if (!isCrashed && physics.isArmed() && physics.getMode() === 'MANUAL') {
-                const masterYawRad = camera.mouseOrbitYaw;
-                const fwdX = Math.sin(masterYawRad);
-                const fwdZ = Math.cos(masterYawRad);
-                const rgtX = Math.cos(masterYawRad);
-                const rgtZ = -Math.sin(masterYawRad);
-
-                // Equal authority for forward/back (pitch) and strafe left/right (roll)
-                let subInP = inPitch;
-                let subInR = inRoll;
-                const inputMag = Math.hypot(subInP, subInR);
-                if (inputMag > 1.0) {
-                    subInP /= inputMag;
-                    subInR /= inputMag;
-                }
-
-                // 1. Horizontal Flight (WASD + Remote Teleop + Speed Mode Scaling)
-                if (inputMag > 0.02) {
-                    const targetVx = (fwdX * subInP + rgtX * subInR) * profile.maxSpeed;
-                    const targetVz = (fwdZ * subInP + rgtZ * subInR) * profile.maxSpeed;
-                    const blendH = Math.min(1.0, physicsDt * profile.accelRate);
-                    subVel[0] += (targetVx - subVel[0]) * blendH;
-                    subVel[2] += (targetVz - subVel[2]) * blendH;
-                } else {
-                    // Crisp Air-Brakes: halts horizontal drift smoothly and instantly
-                    const blendBrake = Math.min(1.0, physicsDt * profile.brakeRate);
-                    subVel[0] += (0.0 - subVel[0]) * blendBrake;
-                    subVel[2] += (0.0 - subVel[2]) * blendBrake;
-                    if (Math.hypot(subVel[0], subVel[2]) < 0.10) {
-                        subVel[0] = 0;
-                        subVel[2] = 0;
-                    }
-                }
-
-                // 2. Vertical Flight (Shift / Space for climb, Ctrl / C for descent, or remote teleop)
-                if (inThrottle > 0.05) {
-                    const targetVy = profile.climbSpeed * inThrottle;
-                    const blendClimb = Math.min(1.0, physicsDt * 18.0);
-                    subVel[1] += (targetVy - subVel[1]) * blendClimb;
-                } else if (inThrottle < -0.05) {
-                    const targetVy = -profile.descentSpeed * Math.abs(inThrottle);
-                    const blendDescend = Math.min(1.0, physicsDt * 18.0);
-                    subVel[1] += (targetVy - subVel[1]) * blendDescend;
-                } else {
-                    // Active Altitude Hold when vertical input is neutral
-                    const blendHover = Math.min(1.0, physicsDt * 14.0);
-                    subVel[1] += (0.0 - subVel[1]) * blendHover;
-                    if (Math.abs(subVel[1]) < 0.05) subVel[1] = 0;
-                }
-
-                // Integrate position accurately with enhanced subVel
-                subPos[0] = prevPos[0] + subVel[0] * physicsDt;
-                subPos[1] = prevPos[1] + subVel[1] * physicsDt;
-                subPos[2] = prevPos[2] + subVel[2] * physicsDt;
-
-                // 3. Dynamic Visual Banking & Pitch Tilt
-                const targetPitch = subInP * profile.maxTiltDeg;
-                let targetRoll = subInR * profile.maxTiltDeg;
-                if (inYaw !== 0) {
-                    targetRoll += inYaw * 10.0;
-                }
-                const blendTilt = Math.min(1.0, physicsDt * 22.0);
-                currentRollDeg += (targetRoll - currentRollDeg) * blendTilt;
-                currentPitchDeg += (targetPitch - currentPitchDeg) * blendTilt;
-                physics.setRotation(currentRollDeg, currentPitchDeg, masterHeadingDeg);
-            } else if (isCrashed) {
-                // When crashed: zero propulsion, friction on ground, gravity pulls down
-                subVel[0] *= 0.90;
-                subVel[2] *= 0.90;
-                subVel[1] -= 9.81 * physicsDt;
-                subPos[0] = prevPos[0] + subVel[0] * physicsDt;
-                subPos[1] = prevPos[1] + subVel[1] * physicsDt;
-                subPos[2] = prevPos[2] + subVel[2] * physicsDt;
-            }
-
-            // 1. Strict Ground Height Clamp on EVERY sub-step
-            const groundY = collisionSystem.getGroundHeight(
-                currentMapDef.id,
-                subPos[0],
-                subPos[2],
-                currentMapDef.groundElevation
-            );
-            const minGroundY = groundY + 0.28; // Drone landing clearance buffer
-            if (subPos[1] < minGroundY) {
-                subPos[1] = minGroundY;
-                // Severe downward impact or extreme tilt into ground -> Kamikaze Detonation
-                if (!isCrashed && (prevVelY < -4.2 || Math.abs(currentPitchDeg) > 52 || Math.abs(currentRollDeg) > 52)) {
-                    triggerKamikazeDetonation("HIGH-SPEED GROUND IMPACT", [subPos[0], minGroundY, subPos[2]], null);
-                }
-                if (subVel[1] < 0) subVel[1] = 0;
-                // If landed on ground and neutral, stabilize upright
-                if (!isCrashed && inThrottle <= 0 && Math.hypot(inPitch, inRoll) <= 0.05) {
-                    currentRollDeg *= 0.85;
-                    currentPitchDeg *= 0.85;
-                    physics.setRotation(currentRollDeg, currentPitchDeg, masterHeadingDeg);
-                }
-            }
-
-            // 2. Strict Continuous Collision vs Buildings & Structures on EVERY sub-step -> DETONATES ON IMPACT
-            const col = collisionSystem.resolveDroneCollision(subPos, subVel, 0.45, prevPos, groundY);
-            if (col.hit) {
-                if (!isCrashed) {
-                    triggerKamikazeDetonation(col.obstacleName || 'OBSTACLE / STRUCTURE', [subPos[0], subPos[1], subPos[2]], null);
-                }
-            }
-
-            // 3. Collision vs Moving Entities (Hostile Tanks & Soldiers) -> DIRECT KAMIKAZE STRIKE
-            if (!isCrashed) {
-                for (const ent of entityManager.entities) {
-                    if (!ent.isAlive) continue;
-                    const entMinY = ent.pos[1];
-                    const entMaxY = ent.pos[1] + ent.height;
-                    if (subPos[1] >= entMinY - 0.45 && subPos[1] <= entMaxY + 0.45) {
-                        const dXZ = Math.hypot(subPos[0] - ent.pos[0], subPos[2] - ent.pos[2]);
-                        if (dXZ < 0.55 + ent.radius) {
-                            triggerKamikazeDetonation(ent.roleName.toUpperCase(), [subPos[0], subPos[1], subPos[2]], ent);
-                            break;
-                        }
-                    }
-                }
-            }
+            runCollisionPass(subPos, subVel, prevPos, prevVelY, { throttle: inThrottle, pitch: inPitch, roll: inRoll }, masterHeadingDeg);
 
             physics.setPosition(subPos[0], subPos[1], subPos[2]);
             physics.setVelocity(subVel[0], subVel[1], subVel[2]);
+            lastAuthVelY = subVel[1];
+            physicsAccumulator = 0;
+        } else {
+            let substepGuard = 40; // anti-spin guard on frame hiccups
+            while (physicsAccumulator >= physicsDt && substepGuard-- > 0) {
+                const prevPos = physics.getPosition();
+                const prevVelY = physics.getVelocity()[1];
+                physics.step(physicsDt);
+                physicsAccumulator -= physicsDt;
+
+                const subPos = physics.getPosition();
+                const subVel = physics.getVelocity();
+
+                // When armed, NOT crashed, and in MANUAL flight mode: apply responsive flight dynamics assist
+                if (!isCrashed && physics.isArmed() && physics.getMode() === 'MANUAL') {
+                    const masterYawRad = camera.mouseOrbitYaw;
+                    const fwdX = Math.sin(masterYawRad);
+                    const fwdZ = Math.cos(masterYawRad);
+                    const rgtX = Math.cos(masterYawRad);
+                    const rgtZ = -Math.sin(masterYawRad);
+
+                    // Equal authority for forward/back (pitch) and strafe left/right (roll)
+                    let subInP = inPitch;
+                    let subInR = inRoll;
+                    const inputMag = Math.hypot(subInP, subInR);
+                    if (inputMag > 1.0) {
+                        subInP /= inputMag;
+                        subInR /= inputMag;
+                    }
+
+                    // 1. Horizontal Flight (WASD + Remote Teleop + Speed Mode Scaling)
+                    if (inputMag > 0.02) {
+                        const targetVx = (fwdX * subInP + rgtX * subInR) * profile.maxSpeed;
+                        const targetVz = (fwdZ * subInP + rgtZ * subInR) * profile.maxSpeed;
+                        const blendH = Math.min(1.0, physicsDt * profile.accelRate);
+                        subVel[0] += (targetVx - subVel[0]) * blendH;
+                        subVel[2] += (targetVz - subVel[2]) * blendH;
+                    } else {
+                        // Crisp Air-Brakes: halts horizontal drift smoothly and instantly
+                        const blendBrake = Math.min(1.0, physicsDt * profile.brakeRate);
+                        subVel[0] += (0.0 - subVel[0]) * blendBrake;
+                        subVel[2] += (0.0 - subVel[2]) * blendBrake;
+                        if (Math.hypot(subVel[0], subVel[2]) < 0.10) {
+                            subVel[0] = 0;
+                            subVel[2] = 0;
+                        }
+                    }
+
+                    // 2. Vertical Flight (Shift / Space for climb, Ctrl / C for descent, or remote teleop)
+                    if (inThrottle > 0.05) {
+                        const targetVy = profile.climbSpeed * inThrottle;
+                        const blendClimb = Math.min(1.0, physicsDt * 18.0);
+                        subVel[1] += (targetVy - subVel[1]) * blendClimb;
+                    } else if (inThrottle < -0.05) {
+                        const targetVy = -profile.descentSpeed * Math.abs(inThrottle);
+                        const blendDescend = Math.min(1.0, physicsDt * 18.0);
+                        subVel[1] += (targetVy - subVel[1]) * blendDescend;
+                    } else {
+                        // Active Altitude Hold when vertical input is neutral
+                        const blendHover = Math.min(1.0, physicsDt * 14.0);
+                        subVel[1] += (0.0 - subVel[1]) * blendHover;
+                        if (Math.abs(subVel[1]) < 0.05) subVel[1] = 0;
+                    }
+
+                    // Integrate position accurately with enhanced subVel
+                    subPos[0] = prevPos[0] + subVel[0] * physicsDt;
+                    subPos[1] = prevPos[1] + subVel[1] * physicsDt;
+                    subPos[2] = prevPos[2] + subVel[2] * physicsDt;
+
+                    // 3. Dynamic Visual Banking & Pitch Tilt
+                    const targetPitch = subInP * profile.maxTiltDeg;
+                    let targetRoll = subInR * profile.maxTiltDeg;
+                    if (inYaw !== 0) {
+                        targetRoll += inYaw * 10.0;
+                    }
+                    const blendTilt = Math.min(1.0, physicsDt * 22.0);
+                    currentRollDeg += (targetRoll - currentRollDeg) * blendTilt;
+                    currentPitchDeg += (targetPitch - currentPitchDeg) * blendTilt;
+                    physics.setRotation(currentRollDeg, currentPitchDeg, masterHeadingDeg);
+                } else if (isCrashed) {
+                    // When crashed: zero propulsion, friction on ground, gravity pulls down
+                    subVel[0] *= 0.90;
+                    subVel[2] *= 0.90;
+                    subVel[1] -= 9.81 * physicsDt;
+                    subPos[0] = prevPos[0] + subVel[0] * physicsDt;
+                    subPos[1] = prevPos[1] + subVel[1] * physicsDt;
+                    subPos[2] = prevPos[2] + subVel[2] * physicsDt;
+                }
+
+                runCollisionPass(subPos, subVel, prevPos, prevVelY, { throttle: inThrottle, pitch: inPitch, roll: inRoll }, masterHeadingDeg);
+
+                physics.setPosition(subPos[0], subPos[1], subPos[2]);
+                physics.setVelocity(subVel[0], subVel[1], subVel[2]);
+            }
         }
 
         // Get updated physics state from WASM
@@ -864,6 +1037,9 @@ async function bootstrap() {
         const sensors = physics.getSensors();
         const isArmed = physics.isArmed();
         const mode = physics.getMode();
+
+        // Authoritative battery from the backend sim replaces the local WASM gauge
+        const authBatteryPct = rtPose ? rtPose.batteryPct : sensors.batteryPct;
 
         // 2. Update Real-Time Battlefield War AI (Tanks & Soldier Battalions)
         entityManager.update(
@@ -955,6 +1131,10 @@ async function bootstrap() {
         );
 
         hud.setAiDisplay(browserAI.getMode(), browserAI.getStatus());
+        if (now - lastRealtimeDisplay >= 200) {
+            lastRealtimeDisplay = now;
+            hud.setRealtimeDisplay(realtimeEnabled, worldSnap, snapLatencyMs);
+        }
 
         // Send telemetry to server & LiveKit DataChannel at 10Hz
         if (now - lastTelemetrySend >= 100) {
@@ -982,9 +1162,9 @@ async function bootstrap() {
                 verticalSpeed: vel[1],
                 heading: ((rot[2] % 360) + 360) % 360,
                 battery: {
-                    voltage: 22.2 * (0.6 + 0.4 * (sensors.batteryPct / 100)),
+                    voltage: 22.2 * (0.6 + 0.4 * (authBatteryPct / 100)),
                     current: 5.0,
-                    percentage: sensors.batteryPct,
+                    percentage: authBatteryPct,
                     remainingTime: 1200,
                     cellCount: 4,
                     temperature: 30,
@@ -1016,10 +1196,22 @@ async function bootstrap() {
 
             // 1. WebSocket Telemetry (Backend 1)
             if (ws && ws.readyState === WebSocket.OPEN) {
+                const targetStates: WorldTargetState[] = entityManager.entities
+                    .filter(e => e.faction === 'HOSTILE')
+                    .map(e => ({
+                        id: e.id,
+                        roleName: e.roleName,
+                        type: e.type,
+                        pos: [e.pos[0], e.pos[1], e.pos[2]],
+                        radius: e.radius,
+                        height: e.height,
+                        isAlive: e.isAlive,
+                    }));
                 ws.send(JSON.stringify({
                     type: 'game:telemetry',
                     telemetry,
                     mission: missionManager.getStats(),
+                    targets: targetStates,
                 }));
             }
 
