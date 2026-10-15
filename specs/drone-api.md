@@ -1,12 +1,18 @@
-# Drone API & LiveKit Link Specification
+# Drone API Specification
 
 ## Purpose
-Define how external controllers, AI agents, and notebooks communicate with the drone with minimal latency and zero server-side video processing overhead.
+Define how the drone is controlled — by its own in-browser autonomy, by a human, or by external agents — while keeping the default path free of infrastructure.
 
-## LiveKit Robot Architecture
-- **Direct WebRTC Streaming**: The drone joins a LiveKit room (`drone`) as a robot participant and publishes its onboard camera feed as a WebRTC video track (`drone-fpv`).
-- **No Server Frame Processing**: The backend server does not receive, decode, or relay camera frames. It only issues LiveKit access tokens and handles lightweight control metadata.
-- **Low-Latency Data Channels**:
-  - **Telemetry (`drone:telemetry`)**: Published directly by the drone over LiveKit data channels (position, attitude, velocity, battery, and state).
-  - **Teleoperation & Commands (`teleop:command`)**: Sent by connected notebooks or AI agents over LiveKit data channels to arm, take off, land, or maneuver the drone.
-  - **Vision Annotations (`ai:vision_annotations`)**: Optional bounding boxes sent back to the drone HUD for real-time visual feedback.
+## Primary Path: In-Browser Control Loop
+- The drone's camera image feeds an on-page detector; detections feed an on-page policy that outputs velocity commands; commands drive the same flight path a human uses. No frames leave the browser.
+- The loop runs continuously while enabled and is visible: overlay boxes, autonomy status, and inference cost are reported to the operator.
+
+## Human Arbitration
+- Manual input of any kind takes precedence over autonomy immediately, and autonomy resumes after input stops. The human can also seize control by disarming or triggering the emergency stop.
+
+## Optional External Links (Alternative Mode)
+- When models or controllers must run **outside** the browser, the drone may act as a WebRTC robot: streaming FPV video and telemetry, accepting teleoperation axes, commands, and remote procedure calls over a real-time link. All of this is opt-in and off by default.
+- A lightweight signaling/telemetry service exists for session metadata and remote experiments; it never processes video frames.
+
+## Safety
+- Commands are validated against operational state (arming, geofence, emergency stop) before execution, whichever source issues them.

@@ -1,13 +1,18 @@
-# AI Agent & Kaggle Training Specification
+# AI Agent & Training Specification
 
 ## Purpose
-Enable researchers and AI agents to connect to the drone from a **Jupyter** environment via **LiveKit**, run real-time perception and control loops, and prepare datasets for model training on **Kaggle**.
+Make the drone a trainable robot: collect realistic data, train models externally on **Kaggle**, and deploy them so inference happens entirely in the browser.
 
-## Jupyter-to-Drone Connection
-- **LiveKit Python SDK**: The Jupyter notebook connects directly to the LiveKit room as a participant.
-- **Zero-Copy Frame Subscription**: Video frames from the drone's `drone-fpv` track are received via WebRTC and converted into standard arrays for computer vision or deep learning inference.
-- **Closed-Loop Control**: The notebook processes incoming video and telemetry and publishes control commands or detection overlays back to the drone over LiveKit data channels.
+## Two Models, One Loop
+- **Detector**: finds hostile targets in the FPV image and reports their screen position and apparent size.
+- **Pursuit policy**: a reinforcement-learning policy that consumes the selected target's image-space position and size plus the drone's own velocity, and outputs velocity commands rewarded for closing the distance.
 
-## Kaggle Training Workflow
-- **Synchronized Dataset Collection**: During manual or autonomous flights, the Jupyter client can record synchronized camera frames and telemetry snapshots.
-- **Model Training & Deployment**: Collected datasets can be exported for training vision or reinforcement learning models on Kaggle, and trained weights can be loaded back into the Jupyter notebook to control the drone over LiveKit.
+The two form the autonomy loop the operator toggles in-game.
+
+## Training Workflow
+- Training notebooks reproduce the game's visual conditions (synthetic or captured frames) so models can be trained end-to-end on Kaggle without the game running.
+- Exported models must target the browser runtime with a fixed, documented input/output contract shared between the training side and the game side; a verification step in each notebook proves the contract holds.
+- Until trained weights are deployed, the game runs clearly-labeled built-in substitutes so the pipeline can be exercised at any time.
+
+## Optional External Experimentation (Alternative Mode)
+- For experiments that need full-resolution frames, physics state, or Python tooling outside the browser, notebooks can connect to the drone over the optional real-time link, stream frames, inspect telemetry, issue teleoperation, and record synchronized datasets for Kaggle — the same loop the browser runs, executed externally.

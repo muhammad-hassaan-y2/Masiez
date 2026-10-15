@@ -1,18 +1,18 @@
 # User Interface Specification
 
 ## Purpose
-Provide a clean flight HUD for piloting and a dedicated **User Menu** for configuring settings and switching levels.
+Give the operator an honest flight HUD, clear sight of mission state, and a single place to configure everything — including how much of the flight the AI handles.
 
-## User Menu (Toggled with `` ` ``)
-- **Activation**: Pressing the backquote key (`` ` ``) toggles the User Menu modal and releases pointer lock so the user can interact with settings using the mouse.
-- **Level Selection**: Users change maps/levels exclusively from within the User Menu, rather than via hotkeys or toolbars during active flight.
-- **Game Settings**:
-  - **Sound / Audio**: Toggle game audio mute/unmute.
-  - **Flight Speed Profile**: Switch between speed modes (Cruise, Sport, Turbo).
-  - **Camera Perspective**: Switch between First-Person View (FPV) and Chase view.
-  - **LiveKit Connection**: View WebRTC robot connection status and reconnect if needed.
-  - **Mission & Fleet Controls**: Deploy the next drone or restart the mission (resetting targets and drone fleet).
+## User Menu
+- Toggled during flight; opening it frees the pointer for interaction.
+- Provides: level selection, sound, flight speed profile, camera view, mission restart and fleet deploy, the **autonomy switch (OFF / DETECT / FOLLOW)** with live status of which engines the browser is running, and the optional external robotics link (connect/disconnect and status).
+- Levels are changed only here, never by hotkeys during play.
 
-## In-Game Flight HUD
-- **Telemetry & Mission Readout**: Displays altitude, speed, heading, warhead status, targets destroyed (`Targets Hit / Total Targets`), remaining drone fleet (`Drones Remaining / Total Drones`), and mission score.
-- **Targeting & Optics**: Displays the kamikaze impact reticle, screen-space hostile target markers, target lock status, optical zoom overlay, and any AI vision bounding boxes received via LiveKit.
+## Flight HUD
+- Telemetry: altitude, speed, heading, battery, warhead status.
+- Mission: targets destroyed versus total, drones remaining, score.
+- Targeting: impact reticle, screen-space hostile markers, lock states, optical zoom overlay.
+- **AI layer**: detected-target bounding boxes with labels and confidence, autonomy mode, whether the AI is currently seeking or following, and inference cost. Boxes must always be attributable to either the in-browser model or an external annotation source.
+
+## Clarity Rule
+The operator can tell at a glance who is flying the drone — them, the in-browser AI, or a remote experimenter — and which models are backing the AI.
