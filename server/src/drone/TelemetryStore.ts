@@ -1,3 +1,5 @@
+import { SensorStatus } from 'drone-autonomy-shared';
+
 export class TelemetryStore {
   private history: any[] = [];
   private latest: any = null;
@@ -30,7 +32,9 @@ export class TelemetryStore {
     if (percentage > 25) this.batteryThresholds.clear(); // Reset on charge
 
     if (telemetry.sensors) {
-        const allHealthy = Object.values(telemetry.sensors).every(v => v === true);
+        // DEGRADED or FAILED on any present sensor counts as unhealthy
+        const allHealthy = Object.values(telemetry.sensors)
+            .every(v => v !== SensorStatus.DEGRADED && v !== SensorStatus.FAILED);
         if (this.lastSensorHealth !== allHealthy) {
             this.emitAlert({ type: 'SENSOR_HEALTH', healthy: allHealthy, message: `Sensor health changed` });
             this.lastSensorHealth = allHealthy;

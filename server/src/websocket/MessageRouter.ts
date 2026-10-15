@@ -12,7 +12,9 @@ export class MessageRouter {
   }
 
   public handleMessage(message: any, sessionId: string, source: 'game' | 'ai', wsServer: WebSocketServer) {
-    console.log(`[${new Date().toISOString()}] Routed message from ${source}: ${message.type}`);
+    if (message.type !== 'game:telemetry') {
+      console.log(`[${new Date().toISOString()}] Routed message from ${source}: ${message.type}`);
+    }
     
     if (message.type.startsWith('game:')) {
       if (message.type === 'game:telemetry') {

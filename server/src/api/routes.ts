@@ -41,8 +41,6 @@ export function createRoutes(telemetryStore: any, droneCommands: any, droneState
 
   router.get('/livekit/token', generateLiveKitToken);
   router.post('/livekit/token', generateLiveKitToken);
-  router.get('/drone/livekit/token', generateLiveKitToken);
-  router.post('/drone/livekit/token', generateLiveKitToken);
 
   router.get('/livekit/config', (req, res) => {
     res.json({
@@ -63,7 +61,7 @@ export function createRoutes(telemetryStore: any, droneCommands: any, droneState
 
   router.get('/drone/camera/snapshot', (req, res) => {
     res.status(410).json({
-      error: 'Camera frames are streamed directly from the drone robot via LiveKit WebRTC (room: "drone", track: "drone-fpv").',
+      error: 'Camera frames never pass through this server. Perception runs in-browser on the game canvas; the optional LiveKit robotics link streams frames peer-to-peer (room: "drone", track: "drone-fpv").',
     });
   });
 
@@ -86,11 +84,6 @@ export function createRoutes(telemetryStore: any, droneCommands: any, droneState
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
-  });
-
-  router.post('/drone/chat', (req, res) => {
-    // forward to chat
-    res.json({ status: 'sent' });
   });
 
   return router;
