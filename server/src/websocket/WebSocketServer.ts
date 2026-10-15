@@ -8,6 +8,7 @@ export class WebSocketServer {
   private gameClients: Map<string, WebSocket> = new Map();
   private aiClients: Map<string, WebSocket> = new Map();
   private router: MessageRouter;
+  public onClientCountChange: ((games: number, ai: number) => void) | null = null;
 
   constructor(server: HttpServer, router: MessageRouter) {
     this.router = router;
@@ -39,6 +40,7 @@ export class WebSocketServer {
     this.gameServer.on('connection', (ws: WebSocket) => {
       const sessionId = Math.random().toString(36).substring(7);
       this.gameClients.set(sessionId, ws);
+      this.notifyClientCount();
       (ws as any).isAlive = true;
 
       ws.on('pong', () => { (ws as any).isAlive = true; });
@@ -56,6 +58,7 @@ export class WebSocketServer {
 
       ws.on('close', () => {
         this.gameClients.delete(sessionId);
+        this.notifyClientCount();
         console.log(`Game client disconnected: ${sessionId}`);
       });
 
@@ -63,10 +66,15 @@ export class WebSocketServer {
     });
   }
 
+  private notifyClientCount(): void {
+    if (this.onClientCountChange) this.onClientCountChange(this.gameClients.size, this.aiClients.size);
+  }
+
   private setupAiServer(): void {
     this.aiServer.on('connection', (ws: WebSocket) => {
       const sessionId = Math.random().toString(36).substring(7);
       this.aiClients.set(sessionId, ws);
+      this.notifyClientCount();
       (ws as any).isAlive = true;
 
       ws.on('pong', () => { (ws as any).isAlive = true; });
@@ -84,6 +92,7 @@ export class WebSocketServer {
 
       ws.on('close', () => {
         this.aiClients.delete(sessionId);
+        this.notifyClientCount();
         console.log(`AI client disconnected: ${sessionId}`);
       });
 
