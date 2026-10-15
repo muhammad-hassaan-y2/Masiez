@@ -13,7 +13,13 @@ import type {
   DroneFlightState,
   GeofenceConfig,
   MissionState,
+  DroneAxes,
+  WorldDroneState,
+  WorldTargetState,
+  WorldMissionSummary,
+  WorldEventKind,
 } from './types';
+import type { SpeedMode } from './constants';
 
 // --- Browser Game → Server ---
 
@@ -102,6 +108,42 @@ export interface ServerConnectionMsg {
   type: 'server:connection';
   status: 'connected' | 'disconnected';
   sessionId: string;
+}
+
+// --- Realtime Authoritative World (Server-owned drone kinematics) ---
+
+export interface GameAxesMsg {
+  type: 'game:axes';
+  axes: DroneAxes;
+  timestamp: number;
+}
+
+export interface GameWorldCommandMsg {
+  type: 'game:world_cmd';
+  action: 'set_speed_mode' | 'deploy' | 'reset' | 'strike';
+  speedMode?: SpeedMode;
+  strike?: {
+    reason: string;
+    pos: [number, number, number];
+    destroyedTargets: Array<{ id: string; roleName: string }>;
+    mission: WorldMissionSummary;
+  };
+}
+
+export interface WorldStateMsg {
+  type: 'world:state';
+  serverTime: number;
+  drone: WorldDroneState;
+  connected: boolean;
+  mission: WorldMissionSummary;
+  targets: WorldTargetState[];
+}
+
+export interface WorldEventMsg {
+  type: 'world:event';
+  kind: WorldEventKind;
+  message: string;
+  serverTime: number;
 }
 
 // --- AI Server → Backend 1 (forwarded to game) ---

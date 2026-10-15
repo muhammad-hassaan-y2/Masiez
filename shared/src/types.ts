@@ -2,6 +2,8 @@
 // Drone Autonomy — Shared Type Definitions
 // ============================================================
 
+import type { SpeedMode } from './constants';
+
 // --- Vector & Quaternion Primitives ---
 
 export interface Vec3 {
@@ -275,3 +277,54 @@ export interface CameraFrameMetadata {
   width: number;
   height: number;
 }
+
+// --- Realtime Authoritative World ---
+
+export interface DroneAxes {
+  throttle: number; // -1..1 (climb/descend)
+  pitch: number;    // -1..1 (forward/back along heading)
+  roll: number;     // -1..1 (strafe left/right)
+  yaw: number;      // -1..1 (turn rate)
+  headingDeg: number; // master heading driving the horizontal axis frame
+}
+
+export interface WorldTargetState {
+  id: string;
+  roleName: string;
+  type: 'SOLDIER' | 'TANK';
+  pos: [number, number, number];
+  radius: number;
+  height: number;
+  isAlive: boolean;
+}
+
+export interface WorldMissionSummary {
+  score: number;
+  targetsHit: number;
+  totalTargets: number;
+  dronesRemaining: number;
+  totalDrones: number;
+  missionStatus: 'ACTIVE' | 'SUCCESS' | 'FAILED' | 'IDLE';
+}
+
+export interface WorldDroneState {
+  pos: [number, number, number];
+  vel: [number, number, number];
+  headingRad: number;
+  rollDeg: number;
+  pitchDeg: number;
+  armed: boolean;
+  crashed: boolean;
+  batteryPct: number;
+  speedMode: SpeedMode;
+  agl: number;
+}
+
+export type WorldEventKind =
+  | 'GROUND_IMPACT'
+  | 'GEOFENCE_CLAMP'
+  | 'INPUT_LOST'
+  | 'DEPLOY'
+  | 'MISSION_END'
+  | 'STRIKE'
+  | 'BATTERY_CRITICAL';

@@ -178,6 +178,42 @@ export const SERVER = {
   telemetryBufferSeconds: 300, // 5 minutes of telemetry history
 } as const;
 
+// --- Realtime Flight Model & Authoritative Server Simulation ---
+
+export type SpeedMode = 'CRUISE' | 'SPORT' | 'TURBO';
+
+export const SPEED_MODES: readonly SpeedMode[] = ['CRUISE', 'SPORT', 'TURBO'] as const;
+
+export interface SpeedProfile {
+  maxSpeed: number;       // Top horizontal speed (m/s)
+  climbSpeed: number;     // Vertical climb speed (m/s)
+  descentSpeed: number;   // Controlled descent speed (m/s)
+  accelRate: number;      // Acceleration sharpness (1/s)
+  brakeRate: number;      // Air brake deceleration sharpness (1/s)
+  maxTiltDeg: number;     // Visual banking and pitch tilt limit (degrees)
+}
+
+export const SPEED_PROFILES: Record<SpeedMode, SpeedProfile> = {
+  'CRUISE': { maxSpeed: 20.0, climbSpeed: 8.5, descentSpeed: 6.0, accelRate: 20.0, brakeRate: 16.0, maxTiltDeg: 22.0 },
+  'SPORT':  { maxSpeed: 36.0, climbSpeed: 16.0, descentSpeed: 11.0, accelRate: 25.0, brakeRate: 20.0, maxTiltDeg: 32.0 },
+  'TURBO':  { maxSpeed: 55.0, climbSpeed: 26.0, descentSpeed: 16.0, accelRate: 30.0, brakeRate: 24.0, maxTiltDeg: 42.0 },
+} as const;
+
+export const REALTIME = {
+  simTickHz: 50,           // server authoritative fixed-timestep rate
+  snapshotHz: 20,          // world:state broadcast rate to clients
+  axesStreamHz: 30,        // client control-axis stream rate
+  inputTimeoutMs: 800,     // neutralize axes when the pilot goes silent (fail-safe hover)
+  landingClearanceM: 0.28, // drone ground buffer used by both server and client clamps
+  impactVelY: -4.2,        // downward speed considered a lethal ground impact
+  impactTiltDeg: 52,       // tilt considered a lethal ground impact
+  geofenceRadiusM: 950,    // soft world boundary around spawn
+  maxAglM: SAFETY.maxAltitudeAGL,
+  batteryIdlePctPerSec: 0.015,
+  batteryFlightPctPerSec: 0.045,
+  replayTickHz: 5,         // mission replay recording rate
+} as const;
+
 // --- Keyboard Bindings ---
 
 export const KEY_BINDINGS = {
