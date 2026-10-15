@@ -197,7 +197,7 @@ function numOr(v: number | undefined, fallback: number): number {
 function projectToPixel(
   t: { pos: [number, number, number]; radius: number; height: number },
   drone: { pos: [number, number, number]; headingRad: number; pitchDeg: number },
-  cam: { yawDeg?: number; pitchDeg?: number; fovDeg?: number },
+  cam: CvArenaCamera,
   frameW: number,
   frameH: number
 ): [number, number, number, number] | null {
