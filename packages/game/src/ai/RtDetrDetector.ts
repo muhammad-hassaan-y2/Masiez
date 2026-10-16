@@ -1,4 +1,4 @@
-import { getOrt } from './ortEnv';
+import * as ort from 'onnxruntime-web';
 import { VisionDetection } from './types';
 
 const INPUT_SIZE = 640;
@@ -43,7 +43,6 @@ export class RtDetrDetector {
             }
             const modelBytes = new Uint8Array(await probe.arrayBuffer());
 
-            const ort = getOrt();
             this.session = await ort.InferenceSession.create(modelBytes, {
                 executionProviders: ['webgpu', 'wasm'],
                 graphOptimizationLevel: 'all',
@@ -116,7 +115,6 @@ export class RtDetrDetector {
             tensor[i + plane * 2] = imageData[i * 4 + 2] / 255;
         }
 
-        const ort = getOrt();
         const inputName = this.session.inputNames[0];
         const feeds: Record<string, any> = {
             [inputName]: new ort.Tensor('float32', tensor, [1, 3, INPUT_SIZE, INPUT_SIZE]),

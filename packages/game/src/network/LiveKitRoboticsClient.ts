@@ -113,7 +113,7 @@ export class LiveKitRoboticsClient {
 
             if (!token) {
                 // Minted per connect by this app's server (server/livekitToken.ts)
-                const tokenUrl = `${window.location.protocol}//${window.location.host || 'localhost:5173'}/api/livekit/token?identity=drone-sim&role=publisher`;
+                const tokenUrl = `${window.location.protocol}//${window.location.host}/api/livekit/token?identity=drone-sim&role=publisher`;
 
                 console.log(`[LiveKit Robotics] Requesting token from ${tokenUrl}...`);
                 const res = await fetch(tokenUrl);
@@ -136,7 +136,7 @@ export class LiveKitRoboticsClient {
             } else if (window.location.protocol === 'https:' && window.location.hostname === 'game.local') {
                 this.livekitUrl = `wss://${window.location.host}/rtc`;
             } else {
-                const lkHost = window.location.hostname || 'localhost';
+                const lkHost = window.location.hostname;
                 this.livekitUrl = `ws://${lkHost}:7880`;
             }
 

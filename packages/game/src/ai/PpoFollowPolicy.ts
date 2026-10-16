@@ -1,4 +1,4 @@
-import { getOrt } from './ortEnv';
+import * as ort from 'onnxruntime-web';
 import { AiAxes, OBS_NORMALIZE_SPEED, OBS_SIZE } from './types';
 
 /**
@@ -29,7 +29,6 @@ export class PpoFollowPolicy {
             }
             const modelBytes = new Uint8Array(await probe.arrayBuffer());
 
-            const ort = getOrt();
             this.session = await ort.InferenceSession.create(modelBytes, {
                 executionProviders: ['wasm'],
                 graphOptimizationLevel: 'all',
@@ -68,7 +67,6 @@ export class PpoFollowPolicy {
         obs[5] = vr / OBS_NORMALIZE_SPEED;
         obs[6] = vu / OBS_NORMALIZE_SPEED;
 
-        const ort = getOrt();
         const inputName = this.session.inputNames[0];
         const results = await this.session.run({
             [inputName]: new ort.Tensor('float32', obs, [1, OBS_SIZE]),
