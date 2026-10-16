@@ -2,18 +2,19 @@
   "name": "drone-autonomy",
   "private": true,
   "workspaces": [
-    "shared",
-    "game",
-    "server"
+    "packages/shared",
+    "packages/game"
   ],
   "scripts": {
-    "dev:game": "npm run dev --workspace=game",
-    "dev:server": "npm run dev --workspace=server",
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:game\"",
-    "build": "npm run build --workspace=shared && npm run build --workspace=game && npm run build --workspace=server"
+    "dev": "npm run dev --workspace=packages/game",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/game",
+    "mint:livekit": "docker compose -f docker-compose.yml -f docker-compose.livekit.yml run --rm tools node scripts/mint_livekit_token.mjs",
+    "rotate:livekit": "docker compose -f docker-compose.yml -f docker-compose.livekit.yml run --rm tools node scripts/mint_livekit_token.mjs --rotate",
+    "gen:certs": "bash certs/generate_certs.sh"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0",
+    "@sinclair/typebox": "^0.34.0",
+    "livekit-server-sdk": "^2.19.1",
     "typescript": "^5.6.0"
   }
 }

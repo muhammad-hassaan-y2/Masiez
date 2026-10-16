@@ -3,33 +3,14 @@ services:
     image: caddy:2-alpine
     depends_on:
       - game
-      - server
-      - jupyter
     ports:
       - "8443:443"
       - "8443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
       - caddy_data:/data
       - caddy_config:/config
-
-  server:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: server-deps
-    command: npm run dev
-    ports:
-      - "3001:3001"
-    environment:
-      - HTTP_PORT=3001
-      - LIVEKIT_URL=ws://livekit:7880
-      - LIVEKIT_API_KEY=devkey
-      - LIVEKIT_API_SECRET=devsecret_devsecret_devsecret_1234
-      - LIVEKIT_ROOM=drone
-    volumes:
-      - ./server:/workspace/server
-      - ./shared:/workspace/shared
 
   game:
     build:
@@ -39,51 +20,9 @@ services:
     command: npm run dev
     ports:
       - "5173:5173"
-    depends_on:
-      - server
     volumes:
-      - ./game:/workspace/game
-      - ./shared:/workspace/shared
-
-  # OPTIONAL ALTERNATIVE: external-model transport (run models outside the browser).
-  # Enable with:  docker compose --profile livekit up --build
-  livekit:
-    image: livekit/livekit-server:v1.13.9
-    profiles: ["livekit"]
-    command: --config /etc/livekit.yaml
-    ports:
-      - "7880:7880"
-      - "7881:7881"
-      - "7882:7882/udp"
-    volumes:
-      - ./livekit.yaml:/etc/livekit.yaml:ro
-
-  vision:
-    build:
-      context: ./vision
-    profiles: ["livekit"]
-    environment:
-      - LIVEKIT_URL=ws://livekit:7880
-      - LIVEKIT_API_KEY=devkey
-      - LIVEKIT_API_SECRET=devsecret_devsecret_devsecret_1234
-      - LIVEKIT_ROOM=drone
-    depends_on:
-      - livekit
-    volumes:
-      - ./vision:/app
-
-  jupyter:
-    build:
-      context: ./notebooks
-    environment:
-      - LIVEKIT_URL=ws://livekit:7880
-      - LIVEKIT_API_KEY=devkey
-      - LIVEKIT_API_SECRET=devsecret_devsecret_devsecret_1234
-      - LIVEKIT_ROOM=drone
-    depends_on:
-      - server
-    volumes:
-      - ./notebooks:/workspace
+      - ./packages/game:/workspace/packages/game
+      - ./packages/shared:/workspace/packages/shared
 
 volumes:
   caddy_data:

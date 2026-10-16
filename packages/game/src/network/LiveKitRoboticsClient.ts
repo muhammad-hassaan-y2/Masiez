@@ -112,17 +112,13 @@ export class LiveKitRoboticsClient {
             let targetIdentity = 'drone-sim';
 
             if (!token) {
-                // 1. Fetch JWT Access Token from Backend 1
-                const apiHost = window.location.port === '5173'
-                    ? `${window.location.hostname || 'localhost'}:3001`
-                    : (window.location.host || 'localhost:3001');
-                const apiProtocol = window.location.protocol;
-                const tokenUrl = `${apiProtocol}//${apiHost}/api/v1/livekit/token?identity=drone-sim&room=drone`;
+                // Committed long-lived dev token (scripts/mint_livekit_token.mjs)
+                const tokenUrl = `${window.location.protocol}//${window.location.host || 'localhost:5173'}/livekit/token.json`;
 
                 console.log(`[LiveKit Robotics] Requesting token from ${tokenUrl}...`);
                 const res = await fetch(tokenUrl);
                 if (!res.ok) {
-                    throw new Error(`Token fetch failed: ${res.status} ${res.statusText}`);
+                    throw new Error(`Token fetch failed: ${res.status} ${res.statusText}. Expected committed file packages/game/public/livekit/token.json.`);
                 }
 
                 const data = await res.json();
@@ -146,7 +142,7 @@ export class LiveKitRoboticsClient {
 
             console.log(`[LiveKit Robotics] Connecting to ${this.livekitUrl} in room '${this.roomName}' as '${this.identity}'...`);
 
-            // 2. Initialize LiveKit Room
+            // Initialize LiveKit Room
             this.room = new Room({
                 adaptiveStream: true,
                 dynacast: true,

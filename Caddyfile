@@ -1,17 +1,14 @@
 game.local {
-	tls internal
+	tls /etc/caddy/certs/dev.crt /etc/caddy/certs/dev.key
 
 	@livekit path /rtc*
 	reverse_proxy @livekit livekit:7880
-
-	@backend path /ws/* /api/*
-	reverse_proxy @backend server:3001
 
 	reverse_proxy game:5173
 }
 
 jupyter.local {
-	tls internal
+	tls /etc/caddy/certs/dev.crt /etc/caddy/certs/dev.key
 
 	reverse_proxy jupyter:8888
 }

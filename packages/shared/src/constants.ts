@@ -167,17 +167,6 @@ export const CAMERA = {
   },
 } as const;
 
-// --- Server ---
-
-export const SERVER = {
-  httpPort: 3001,
-  wsGamePath: '/ws/game',
-  wsAiPath: '/ws/ai',
-  apiBasePath: '/api/v1',
-  maxSessions: 10,
-  telemetryBufferSeconds: 300, // 5 minutes of telemetry history
-} as const;
-
 // --- Keyboard Bindings ---
 
 export const KEY_BINDINGS = {

@@ -587,48 +587,6 @@ async function bootstrap() {
         }
     };
 
-    // 6. Connect to Backend 1 (WebSocket)
-    let ws: WebSocket | null = null;
-    function connectWS() {
-        try {
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsHost = window.location.port === '5173'
-                ? `${window.location.hostname || 'localhost'}:3001`
-                : (window.location.host || 'localhost:3001');
-            const wsUrl = `${wsProtocol}//${wsHost}/ws/game`;
-            ws = new WebSocket(wsUrl);
-            ws.onopen = () => console.log(`Connected to Backend 1 Game Server (${wsUrl})`);
-            ws.onmessage = (e) => {
-                try {
-                    const msg = JSON.parse(e.data);
-                    if (msg.type === 'server:command') {
-                        const cmd = msg.command;
-                        console.log("Received server command:", cmd);
-                        if (cmd.type === 'arm_and_takeoff') {
-                            physics.arm(true);
-                            physics.setMode('AUTOPILOT');
-                            const p = physics.getPosition();
-                            const alt = (cmd.params as any)?.altitude || 15;
-                            physics.setAutopilotTarget(p[0], p[1] + alt, p[2]);
-                        } else if (cmd.type === 'land') {
-                            physics.setMode('AUTOPILOT');
-                            const p = physics.getPosition();
-                            physics.setAutopilotTarget(p[0], currentMapDef.groundElevation + 0.1, p[2]);
-                        } else if (cmd.type === 'emergency_stop') {
-                            physics.arm(false);
-                        }
-                    }
-                } catch (err) {}
-            };
-            ws.onclose = () => {
-                setTimeout(connectWS, 3000);
-            };
-        } catch (e) {
-            setTimeout(connectWS, 3000);
-        }
-    }
-    connectWS();
-
     // 6. Game Loop: Fixed Timestep Physics (250Hz) + WebGPU Render
     let lastTime = performance.now();
     let physicsAccumulator = 0;
@@ -956,7 +914,7 @@ async function bootstrap() {
 
         hud.setAiDisplay(browserAI.getMode(), browserAI.getStatus());
 
-        // Send telemetry to server & LiveKit DataChannel at 10Hz
+        // Send telemetry to LiveKit DataChannel at 10Hz
         if (now - lastTelemetrySend >= 100) {
             lastTelemetrySend = now;
             const telemetry: Telemetry = {
@@ -1014,16 +972,7 @@ async function bootstrap() {
                 rangefinderAlt: sensors.rangefinder,
             };
 
-            // 1. WebSocket Telemetry (Backend 1)
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'game:telemetry',
-                    telemetry,
-                    mission: missionManager.getStats(),
-                }));
-            }
-
-            // 2. LiveKit Robotics Data Channel (Sub-100ms Telemetry Transport)
+            // LiveKit Robotics Data Channel (Sub-100ms Telemetry Transport)
             livekit.publishTelemetry(telemetry, missionManager.getStats());
         }
 

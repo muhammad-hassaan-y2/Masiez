@@ -1,0 +1,33 @@
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.9
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?}: ${LIVEKIT_API_SECRET:?}"
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: false
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+
+  jupyter:
+    build:
+      context: ./packages/notebooks
+    volumes:
+      - ./packages/notebooks:/workspace
+    environment:
+      - LIVEKIT_URL=${LIVEKIT_URL:?}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:?}
+      - LIVEKIT_ROOM=${LIVEKIT_ROOM:?}
+
+  tools:
+    image: node:26-bookworm-slim
+    profiles: ["tools"]
+    working_dir: /app
+    volumes:
+      - .:/app

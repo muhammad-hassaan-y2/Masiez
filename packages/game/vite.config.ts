@@ -12,7 +12,7 @@ export default defineConfig({
   plugins: [
     viteStaticCopy({
       targets: [
-        { src: '../node_modules/onnxruntime-web/dist/*.wasm', dest: 'onnxruntime', rename: { stripBase: true } },
+        { src: '../../node_modules/onnxruntime-web/dist/*.wasm', dest: 'onnxruntime', rename: { stripBase: true } },
       ],
     }),
   ],
