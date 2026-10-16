@@ -1,5 +1,5 @@
 game.local {
-	tls /etc/caddy/certs/dev.crt /etc/caddy/certs/dev.key
+	tls /etc/caddy/certs/ca.crt /etc/caddy/certs/ca.key
 
 	@livekit path /rtc*
 	reverse_proxy @livekit livekit:7880
@@ -8,7 +8,7 @@ game.local {
 }
 
 jupyter.local {
-	tls /etc/caddy/certs/dev.crt /etc/caddy/certs/dev.key
+	tls /etc/caddy/certs/ca.crt /etc/caddy/certs/ca.key
 
 	reverse_proxy jupyter:8888
 }

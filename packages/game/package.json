@@ -11,6 +11,7 @@
   "dependencies": {
     "drone-autonomy-shared": "*",
     "livekit-client": "^2.22.4",
+    "livekit-server-sdk": "^2.19.1",
     "onnxruntime-web": "^1.30.0"
   },
   "devDependencies": {

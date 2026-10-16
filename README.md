@@ -17,7 +17,7 @@ Add to your `hosts` file (`/etc/hosts` on Linux/macOS, `C:\Windows\System32\driv
 npm run gen:certs
 ```
 
-Trust `certs/ca.crt` in your system or browser store once so both URLs open without warnings.
+Trust `certs/ca.crt` in your system or browser store so both URLs open without warnings.
 
 ### 3. Start the stack
 

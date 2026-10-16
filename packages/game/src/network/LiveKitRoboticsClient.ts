@@ -112,13 +112,13 @@ export class LiveKitRoboticsClient {
             let targetIdentity = 'drone-sim';
 
             if (!token) {
-                // Committed long-lived dev token (scripts/mint_livekit_token.mjs)
-                const tokenUrl = `${window.location.protocol}//${window.location.host || 'localhost:5173'}/livekit/token.json`;
+                // Minted per connect by this app's server (server/livekitToken.ts)
+                const tokenUrl = `${window.location.protocol}//${window.location.host || 'localhost:5173'}/api/livekit/token?identity=drone-sim&role=publisher`;
 
                 console.log(`[LiveKit Robotics] Requesting token from ${tokenUrl}...`);
                 const res = await fetch(tokenUrl);
                 if (!res.ok) {
-                    throw new Error(`Token fetch failed: ${res.status} ${res.statusText}. Expected committed file packages/game/public/livekit/token.json.`);
+                    throw new Error(`Token request failed: ${res.status} ${res.statusText}`);
                 }
 
                 const data = await res.json();
