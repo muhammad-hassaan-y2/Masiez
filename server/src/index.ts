@@ -20,7 +20,9 @@ import { Tools } from './mcp/Tools';
 import { Resources } from './mcp/Resources';
 
 const app = express();
-app.use(cors({ origin: CONFIG.corsOrigins }));
+// `cors` matches an origin list literally, so ['*'] would reject every caller.
+const allowAll = CONFIG.corsOrigins.includes('*');
+app.use(cors({ origin: allowAll ? true : CONFIG.corsOrigins }));
 app.use(express.json({ limit: '8mb' }));
 
 const server = http.createServer(app);
