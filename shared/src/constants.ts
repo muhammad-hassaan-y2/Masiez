@@ -147,7 +147,8 @@ export const SIMULATION = {
 
 export const CAMERA = {
   fpv: {
-    fovDegrees: 90,
+    /** Vertical field of view in degrees; matches Camera.fovRad in the renderer. */
+    fovDegrees: 84,
     width: 640,
     height: 480,
     nearClip: 0.1,

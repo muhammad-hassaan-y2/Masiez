@@ -3,7 +3,7 @@ import { PhysicsBridge } from '../wasm/PhysicsBridge';
 import { EntityManager } from '../gameplay/EntityManager';
 import { RtDetrDetector } from './RtDetrDetector';
 import { PpoFollowPolicy } from './PpoFollowPolicy';
-import { AiAxes, AiMode, AiStatusInfo, VisionDetection } from './types';
+import { AiAxes, AiMode, AiStatusInfo, VisionDetection, FPV_VERTICAL_FOV, TARGET_REAL_HEIGHT_M } from './types';
 
 export interface AiFrameContext {
     canvas: HTMLCanvasElement;
@@ -38,6 +38,9 @@ export class BrowserAIController {
     private axes: AiAxes = { throttle: 0, pitch: 0, roll: 0, yaw: 0 };
     private following = false;
     private lastHumanInput = 0;
+    private lastObservation: {
+        dx: number; dy: number; w: number; h: number; rangeM: number; altDeltaM: number; label: string;
+    } | null = null;
 
     public setMode(mode: AiMode): void {
         this.mode = mode;
@@ -116,9 +119,18 @@ export class BrowserAIController {
             const vr = vel[0] * Math.cos(yaw) - vel[2] * Math.sin(yaw);
             const vu = vel[1];
 
+            // Range comes from the apparent box height, altitude from the sensor
+            // fuse — the same two derivations the training environment uses.
+            const realH = target.realHeightM ?? TARGET_REAL_HEIGHT_M;
+            const rangeEst = h > 1e-4 ? realH / (2 * h * Math.tan(FPV_VERTICAL_FOV / 2)) : 0;
+            const altDelta = target.altitudeM !== undefined
+                ? ctx.physics.getPosition()[1] - target.altitudeM - realH / 2
+                : ctx.physics.getSensors().altitudeAGL - realH / 2;
+            this.lastObservation = { dx, dy, w, h, rangeM: rangeEst, altDeltaM: altDelta, label: target.label };
+
             let axes: AiAxes;
             if (this.policy.ready) {
-                axes = await this.policy.act(dx, dy, w, h, vf, vr, vu);
+                axes = await this.policy.act(dx, dy, w, h, vf, vr, vu, rangeEst, altDelta);
                 axes.yaw = this.yawAssist(dx);
             } else {
                 axes = this.pdAssistAxes(dx, dy, w, h);
@@ -132,6 +144,11 @@ export class BrowserAIController {
             this.lastInferMs = performance.now() - started;
             this.busy = false;
         }
+    }
+
+    /** Last observation handed to the policy, kept for the HUD debug overlay. */
+    public getObservationDebug(): { dx: number; dy: number; w: number; h: number; rangeM: number; altDeltaM: number; label: string } | null {
+        return this.lastObservation;
     }
 
     private pickTarget(): VisionDetection | null {
@@ -158,9 +175,19 @@ export class BrowserAIController {
     private pdAssistAxes(dx: number, dy: number, w: number, h: number): AiAxes {
         const clamp = (v: number) => Math.max(-1, Math.min(1, v));
         const aligned = Math.abs(dx) < 0.18;
-        const closeRange = Math.max(w, h) > 0.32;
+        const size = Math.max(w, h);
+        // On station: once the target fills the frame, stop closing and orbit it,
+        // otherwise the follow behaviour turns into a kamikaze strike.
+        if (size > 0.55) {
+            return {
+                pitch: 0,
+                roll: clamp(aligned ? Math.sign(dx || 1) * 0.45 : dx * 2.4),
+                throttle: clamp(-dy * 2.2),
+                yaw: this.yawAssist(dx),
+            };
+        }
         return {
-            pitch: aligned ? (closeRange ? 0.35 : 0.9) : 0.15,
+            pitch: aligned ? (size > 0.32 ? 0.35 : 0.9) : 0.15,
             roll: clamp(dx * 2.4),
             throttle: clamp(-dy * 2.2),
             yaw: this.yawAssist(dx),
@@ -200,6 +227,8 @@ export class BrowserAIController {
                 label: ent.roleName || ent.type,
                 bbox: [bottom.x - halfW, y0, halfW * 2, y1 - y0],
                 confidence: 1.0,
+                altitudeM: ent.pos[1],
+                realHeightM: ent.height,
             });
         }
         return out;
@@ -213,7 +242,7 @@ export class BrowserAIController {
     public getStatus(): AiStatusInfo {
         return {
             detector: this.detector.ready ? 'RT-DETR ONNX' : 'SIM PROJECTOR',
-            policy: this.policy.ready ? 'PPO ONNX' : 'PD ASSIST',
+            policy: this.policy.ready ? `PPO ONNX (${this.policy.obsWidth}D)` : 'PD ASSIST',
             inferenceMs: this.lastInferMs,
             detections: this.detections.length,
             following: this.following,
