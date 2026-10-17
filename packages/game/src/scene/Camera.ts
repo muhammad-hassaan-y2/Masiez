@@ -173,13 +173,14 @@ export class Camera {
         // High magnification reduces mouse sensitivity proportionally for rock-steady sniper aiming
         const zoomScale = this.isScoped ? (1.0 / Math.max(1.0, this.scopeGear * 0.75)) : 1.0;
         const sensitivity = 0.0035 * zoomScale;
-        // Roundward horizontal orbit (left/right around drone)
+        // Horizontal orbit: mouse right turns the view right
         this.mouseOrbitYaw += dx * sensitivity;
-        // Vertical pitch: mouse up -> tilt view up / drone lower; mouse down -> tilt view down
-        this.mouseOrbitPitch -= dy * sensitivity;
+        // Vertical pitch: mouse up tilts the view up (standard FPS look)
+        this.mouseOrbitPitch += dy * sensitivity;
 
-        // Clamp pitch so camera stays elevated above the drone (never dips underground or behind terrain)
-        this.mouseOrbitPitch = Math.max(0.02, Math.min(1.25, this.mouseOrbitPitch));
+        // FPV can look freely above the horizon; chase only dips slightly below the drone
+        const minPitch = this.mode === 'FPV' ? -1.25 : -0.45;
+        this.mouseOrbitPitch = Math.max(minPitch, Math.min(1.25, this.mouseOrbitPitch));
         if (!this.isScoped) {
             this.baseDistance = Math.max(1.5, Math.min(8.0, this.baseDistance + zoomDelta));
         }
@@ -224,7 +225,8 @@ export class Camera {
 
         if (this.mode === 'FPV') {
             // First Person View: Camera is rigidly attached to the drone front nose gimbal
-            const fwdX = Math.sin(this.mouseOrbitYaw);
+            // World basis: yaw=0 looks along +Z; yaw increases turn screen-right (toward -X)
+            const fwdX = -Math.sin(this.mouseOrbitYaw);
             const fwdZ = Math.cos(this.mouseOrbitYaw);
 
             const noseDist = 0.32;
@@ -235,9 +237,9 @@ export class Camera {
 
             // Look forward along mouse gaze vector
             const lookDist = 100.0;
-            const gazeFwdX = Math.sin(this.mouseOrbitYaw) * Math.cos(this.mouseOrbitPitch);
+            const gazeFwdX = fwdX * Math.cos(this.mouseOrbitPitch);
             const gazeFwdY = -Math.sin(this.mouseOrbitPitch);
-            const gazeFwdZ = Math.cos(this.mouseOrbitYaw) * Math.cos(this.mouseOrbitPitch);
+            const gazeFwdZ = fwdZ * Math.cos(this.mouseOrbitPitch);
 
             this.target[0] = this.position[0] + gazeFwdX * lookDist;
             this.target[1] = this.position[1] + gazeFwdY * lookDist;
@@ -261,11 +263,13 @@ export class Camera {
         }
 
         // Third-Person Chase Mode: Orbit locked behind the drone
+        const fwdX = -Math.sin(this.mouseOrbitYaw);
+        const fwdZ = Math.cos(this.mouseOrbitYaw);
         const distHoriz = this.baseDistance * Math.cos(this.mouseOrbitPitch);
         const distVert  = this.baseDistance * Math.sin(this.mouseOrbitPitch);
 
-        const targetX = dronePos[0] - Math.sin(this.mouseOrbitYaw) * distHoriz;
-        const targetZ = dronePos[2] - Math.cos(this.mouseOrbitYaw) * distHoriz;
+        const targetX = dronePos[0] - fwdX * distHoriz;
+        const targetZ = dronePos[2] - fwdZ * distHoriz;
         const minAllowedY = baseElev + 0.40;
         const targetY = Math.max(minAllowedY, dronePos[1] + distVert);
 
@@ -275,9 +279,9 @@ export class Camera {
         this.initialized = true;
 
         const lookDist = 50.0;
-        this.target[0] = dronePos[0] + Math.sin(this.mouseOrbitYaw) * Math.cos(this.mouseOrbitPitch) * lookDist;
+        this.target[0] = dronePos[0] + fwdX * Math.cos(this.mouseOrbitPitch) * lookDist;
         this.target[1] = dronePos[1] - Math.sin(this.mouseOrbitPitch) * lookDist;
-        this.target[2] = dronePos[2] + Math.cos(this.mouseOrbitYaw) * Math.cos(this.mouseOrbitPitch) * lookDist;
+        this.target[2] = dronePos[2] + fwdZ * Math.cos(this.mouseOrbitPitch) * lookDist;
 
         const targetFov = this.isScoped ? (this.baseFovRad / Math.max(1, this.scopeGear)) : this.baseFovRad;
         this.fovRad += (targetFov - this.fovRad) * 0.22;

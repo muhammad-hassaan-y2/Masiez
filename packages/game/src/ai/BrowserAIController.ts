@@ -112,8 +112,8 @@ export class BrowserAIController {
 
             const yaw = ctx.camera.mouseOrbitYaw;
             const vel = ctx.physics.getVelocity();
-            const vf = vel[0] * Math.sin(yaw) + vel[2] * Math.cos(yaw);
-            const vr = vel[0] * Math.cos(yaw) - vel[2] * Math.sin(yaw);
+            const vf = vel[2] * Math.cos(yaw) - vel[0] * Math.sin(yaw);
+            const vr = -vel[0] * Math.cos(yaw) - vel[2] * Math.sin(yaw);
             const vu = vel[1];
 
             let axes: AiAxes;
@@ -174,7 +174,7 @@ export class BrowserAIController {
         const sh = window.innerHeight;
         const camYaw = ctx.camera.mouseOrbitYaw;
         const drone = ctx.physics.getPosition();
-        const rightX = Math.cos(camYaw);
+        const rightX = -Math.cos(camYaw);
         const rightZ = -Math.sin(camYaw);
 
         for (const ent of ctx.entityManager.getAliveHostileTargets()) {

@@ -13,7 +13,6 @@ export class HUD {
     private spdEl!: HTMLElement;
     private hdgEl!: HTMLElement;
     private batEl!: HTMLElement;
-    private gpsEl!: HTMLElement;
     private modeEl!: HTMLElement;
     private stateEl!: HTMLElement;
 
@@ -38,7 +37,6 @@ export class HUD {
     private fpvClimbRateEl!: HTMLElement | null;
     private fpvSpdLadderEl!: HTMLElement | null;
     private fpvSpdKmhEl!: HTMLElement | null;
-    private fpvRecTimerEl!: HTMLElement | null;
     private fpvGimbalTiltEl!: HTMLElement | null;
     private fpvGpsCoordsEl!: HTMLElement | null;
 
@@ -49,7 +47,7 @@ export class HUD {
     private lockStatusEl!: HTMLElement;
     private livekitStatusEl!: HTMLElement;
     private aiStatusEl!: HTMLElement;
-    private menuHintBtnEl!: HTMLElement;
+    private controlsBarEl!: HTMLElement;
     private aiVisionOverlayEl!: HTMLElement;
     private targetMarkersOverlayEl!: HTMLElement;
     private lastAiDetectionsRef: VisionDetection[] | null = null;
@@ -109,7 +107,7 @@ export class HUD {
             pointer-events: none;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
             color: #00ffcc;
-            text-shadow: 0 0 4px rgba(0, 255, 204, 0.6);
+            text-shadow: 0 0 3px rgba(0, 255, 204, 0.4);
             overflow: hidden;
             user-select: none;
         `;
@@ -123,9 +121,9 @@ export class HUD {
         const topRow = document.createElement('div');
         topRow.style.cssText = `
             position: absolute;
-            top: 16px;
-            left: 20px;
-            right: 20px;
+            top: 12px;
+            left: 16px;
+            right: 16px;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
@@ -136,18 +134,18 @@ export class HUD {
         // Top Left: Flight Telemetry
         const leftPanel = document.createElement('div');
         leftPanel.style.cssText = `
-            background: rgba(10, 22, 34, 0.82);
-            backdrop-filter: blur(10px);
-            padding: 14px 20px;
+            background: rgba(10, 22, 34, 0.62);
+            backdrop-filter: blur(8px);
+            padding: 9px 14px;
             border-radius: 10px;
-            border: 1px solid rgba(0, 255, 204, 0.35);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(0, 255, 204, 0.22);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            font-size: 15px;
+            gap: 3px;
+            font-size: 13px;
             font-weight: 600;
-            min-width: 170px;
+            min-width: 150px;
             pointer-events: auto;
         `;
         this.altEl = document.createElement('div');
@@ -171,15 +169,15 @@ export class HUD {
 
         this.opsPanel = document.createElement('div');
         this.opsPanel.style.cssText = `
-            background: rgba(10, 22, 34, 0.90);
-            backdrop-filter: blur(12px);
-            padding: 10px 24px;
-            border-radius: 14px;
-            border: 1px solid rgba(0, 255, 204, 0.45);
-            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+            background: rgba(10, 22, 34, 0.72);
+            backdrop-filter: blur(10px);
+            padding: 7px 18px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 255, 204, 0.32);
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
             display: flex;
-            gap: 22px;
-            font-size: 14px;
+            gap: 18px;
+            font-size: 13px;
             font-weight: 800;
             color: #00ffcc;
             align-items: center;
@@ -209,23 +207,22 @@ export class HUD {
         // Top Right: Systems, Modes & Combat Targeting Panel
         const rightPanel = document.createElement('div');
         rightPanel.style.cssText = `
-            background: rgba(10, 22, 34, 0.82);
-            backdrop-filter: blur(10px);
-            padding: 14px 20px;
+            background: rgba(10, 22, 34, 0.62);
+            backdrop-filter: blur(8px);
+            padding: 9px 14px;
             border-radius: 10px;
-            border: 1px solid rgba(0, 255, 204, 0.35);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(0, 255, 204, 0.22);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            font-size: 14px;
+            gap: 3px;
+            font-size: 12px;
             font-weight: 600;
-            min-width: 210px;
+            min-width: 185px;
             pointer-events: auto;
         `;
 
         this.batEl = document.createElement('div');
-        this.gpsEl = document.createElement('div');
         this.modeEl = document.createElement('div');
         this.modeEl.style.cssText = `
             cursor: pointer;
@@ -287,25 +284,7 @@ export class HUD {
         `;
         this.audioEl.onclick = () => this.onAudioToggle?.();
 
-        this.menuHintBtnEl = document.createElement('div');
-        this.menuHintBtnEl.style.cssText = `
-            margin-top: 4px;
-            padding: 5px 10px;
-            border-radius: 6px;
-            background: rgba(0, 255, 204, 0.16);
-            border: 1px solid rgba(0, 255, 204, 0.5);
-            color: #ffffff;
-            font-size: 12px;
-            font-weight: 800;
-            text-align: center;
-            cursor: pointer;
-            letter-spacing: 0.8px;
-        `;
-        this.menuHintBtnEl.innerHTML = `[ \` ] USER MENU & SETTINGS`;
-        this.menuHintBtnEl.onclick = () => this.toggleUserMenu();
-
         rightPanel.appendChild(this.batEl);
-        rightPanel.appendChild(this.gpsEl);
         rightPanel.appendChild(this.modeEl);
         rightPanel.appendChild(this.stateEl);
         rightPanel.appendChild(this.speedModeEl);
@@ -314,7 +293,6 @@ export class HUD {
         rightPanel.appendChild(this.aiStatusEl);
         rightPanel.appendChild(this.livekitStatusEl);
         rightPanel.appendChild(this.audioEl);
-        rightPanel.appendChild(this.menuHintBtnEl);
 
         // Screen-space Hostile Target Diamond Markers Overlay
         this.targetMarkersOverlayEl = document.createElement('div');
@@ -349,36 +327,36 @@ export class HUD {
         controlsHint.id = 'hud-controls';
         controlsHint.style.cssText = `
             position: absolute;
-            bottom: 16px;
+            bottom: 12px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(8, 16, 26, 0.92);
-            backdrop-filter: blur(10px);
-            padding: 10px 24px;
-            border-radius: 24px;
-            border: 1px solid rgba(0, 255, 204, 0.45);
-            font-size: 13px;
-            color: #f0f0f0;
+            background: rgba(8, 16, 26, 0.78);
+            backdrop-filter: blur(8px);
+            padding: 7px 18px;
+            border-radius: 20px;
+            border: 1px solid rgba(0, 255, 204, 0.28);
+            font-size: 12px;
+            color: #e8eef0;
             display: flex;
-            gap: 16px;
+            gap: 14px;
             align-items: center;
-            box-shadow: 0 4px 25px rgba(0, 0, 0, 0.6);
+            box-shadow: 0 4px 25px rgba(0, 0, 0, 0.5);
             white-space: nowrap;
             pointer-events: auto;
+            transition: opacity 0.45s ease;
         `;
         controlsHint.innerHTML = `
             <span id="hud-pointer-status" style="color:#00ffcc; font-weight:bold;">[CLICK TO LOCK AIM]</span>
-            <span style="color:#00ff88; cursor:pointer;" id="hud-menu-open-hint"><b>[\`]</b> USER MENU</span>
-            <span style="color:#ff5533;"><b>[KAMIKAZE]</b> FLY INTO TARGET</span>
-            <span style="color:#ff55cc;"><b>[RIGHT-CLICK / Z]</b> OPTICS</span>
-            <span style="color:#ffcc00;"><b>[T / MMB]</b> LOCK TARGET</span>
-            <span style="color:#00ffff; cursor:pointer;" id="hud-cam-toggle"><b>[V]</b> FPV/CHASE</span>
-            <span style="color:#ffaa66;"><b>[W / S / A / D]</b> FLY</span>
-            <span style="color:#33ffdd;"><b>[Q / E]</b> YAW</span>
-            <span style="color:#33ff99;"><b>[SHIFT]</b> CLIMB</span>
-            <span style="color:#66ccff;"><b>[CTRL]</b> DESCEND</span>
+            <span style="color:#00ff88; cursor:pointer;" id="hud-menu-open-hint"><b>[\`]</b> MENU</span>
+            <span style="color:#ffaa66;"><b>[WASD]</b> FLY</span>
+            <span style="color:#33ffdd;"><b>[Q/E]</b> TURN</span>
+            <span style="color:#33ff99;"><b>[SHIFT/CTRL]</b> UP/DOWN</span>
+            <span style="color:#00ffff; cursor:pointer;" id="hud-cam-toggle"><b>[V]</b> VIEW</span>
+            <span style="color:#ff55cc;"><b>[Z]</b> OPTICS</span>
+            <span style="color:#ffcc00;"><b>[T]</b> LOCK</span>
         `;
         this.pointerStatusEl = controlsHint.querySelector('#hud-pointer-status');
+        this.controlsBarEl = controlsHint;
         const camToggleBtn = controlsHint.querySelector('#hud-cam-toggle') as HTMLElement;
         if (camToggleBtn) camToggleBtn.onclick = () => this.onCameraToggle?.();
         const menuOpenHintBtn = controlsHint.querySelector('#hud-menu-open-hint') as HTMLElement;
@@ -581,26 +559,16 @@ export class HUD {
             font-family: monospace, -apple-system, sans-serif;
         `;
         this.fpvOsdContainer.innerHTML = `
-            <div style="position:absolute; top:18px; left:18px; width:40px; height:40px; border-top:2px solid rgba(0,255,204,0.7); border-left:2px solid rgba(0,255,204,0.7);"></div>
-            <div style="position:absolute; top:18px; right:18px; width:40px; height:40px; border-top:2px solid rgba(0,255,204,0.7); border-right:2px solid rgba(0,255,204,0.7);"></div>
-            <div style="position:absolute; bottom:66px; left:18px; width:40px; height:40px; border-bottom:2px solid rgba(0,255,204,0.7); border-left:2px solid rgba(0,255,204,0.7);"></div>
-            <div style="position:absolute; bottom:66px; right:18px; width:40px; height:40px; border-bottom:2px solid rgba(0,255,204,0.7); border-right:2px solid rgba(0,255,204,0.7);"></div>
+            <div style="position:absolute; top:18px; left:18px; width:40px; height:40px; border-top:2px solid rgba(0,255,204,0.55); border-left:2px solid rgba(0,255,204,0.55);"></div>
+            <div style="position:absolute; top:18px; right:18px; width:40px; height:40px; border-top:2px solid rgba(0,255,204,0.55); border-right:2px solid rgba(0,255,204,0.55);"></div>
+            <div style="position:absolute; bottom:60px; left:18px; width:40px; height:40px; border-bottom:2px solid rgba(0,255,204,0.55); border-left:2px solid rgba(0,255,204,0.55);"></div>
+            <div style="position:absolute; bottom:60px; right:18px; width:40px; height:40px; border-bottom:2px solid rgba(0,255,204,0.55); border-right:2px solid rgba(0,255,204,0.55);"></div>
 
-            <div style="position:absolute; top:78px; left:26px; font-size:12px; font-weight:700; color:#00ffcc; line-height:1.45; text-shadow:0 0 6px rgba(0,255,204,0.8);">
-                <div><span style="color:#ff3344; animation:pulse 1.2s infinite;">● REC</span> <span id="fpv-rec-timer">00:01:24</span> // LIVEKIT WEBRTC</div>
-                <div style="color:#ffaa44;">PAYLOAD: KAMIKAZE HE WARHEAD</div>
-            </div>
-
-            <div style="position:absolute; top:78px; right:26px; text-align:right; font-size:12px; font-weight:700; color:#00ffcc; line-height:1.45; text-shadow:0 0 6px rgba(0,255,204,0.8);">
-                <div>RF LINK: <b style="color:#00ff88;">99% (5.8 GHz HD)</b></div>
-                <div style="color:#88ddff;">ROBOT RTC: <b>DRONE ROOM</b></div>
-            </div>
-
-            <div style="position:absolute; top:78px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;">
-                <div id="fpv-heading-tape" style="background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.45); border-radius:12px; padding:3px 18px; font-size:13px; font-weight:800; color:#00ffcc; letter-spacing:2px; box-shadow:0 0 10px rgba(0,255,204,0.3);">
+            <div style="position:absolute; top:24px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center;">
+                <div id="fpv-heading-tape" style="background:rgba(5,15,25,0.65); border:1px solid rgba(0,255,204,0.35); border-radius:12px; padding:3px 18px; font-size:13px; font-weight:800; color:#00ffcc; letter-spacing:2px; box-shadow:0 0 10px rgba(0,255,204,0.25);">
                     [ 350 • N • 010 ]
                 </div>
-                <div style="width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid #00ffcc; margin-top:2px;"></div>
+                <div style="width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid rgba(0,255,204,0.85); margin-top:2px;"></div>
             </div>
 
             <div id="fpv-horizon-group" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:280px; height:280px; pointer-events:none;">
@@ -653,10 +621,9 @@ export class HUD {
                 <div id="fpv-spd-kmh" style="font-size:11px; color:#ffcc00; margin-top:2px;">0.0 km/h</div>
             </div>
 
-            <div style="position:absolute; bottom:68px; left:50%; transform:translateX(-50%); display:flex; gap:18px; background:rgba(5,15,25,0.82); border:1px solid rgba(0,255,204,0.4); border-radius:14px; padding:6px 20px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); white-space:nowrap;">
+            <div style="position:absolute; bottom:62px; left:50%; transform:translateX(-50%); display:flex; gap:18px; background:rgba(5,15,25,0.72); border:1px solid rgba(0,255,204,0.3); border-radius:14px; padding:5px 18px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.6); white-space:nowrap;">
                 <div id="fpv-gimbal-tilt" style="color:#ffcc00;">GIMBAL: 0°</div>
                 <div id="fpv-gps-coords" style="color:#88ddff;">GPS: 33.6000° N, 72.9000° E</div>
-                <div style="color:#00ff88;">KAMIKAZE FPV // [\`] USER MENU</div>
             </div>
         `;
 
@@ -666,7 +633,6 @@ export class HUD {
         this.fpvClimbRateEl = this.fpvOsdContainer.querySelector('#fpv-climb-rate');
         this.fpvSpdLadderEl = this.fpvOsdContainer.querySelector('#fpv-spd-ladder');
         this.fpvSpdKmhEl = this.fpvOsdContainer.querySelector('#fpv-spd-kmh');
-        this.fpvRecTimerEl = this.fpvOsdContainer.querySelector('#fpv-rec-timer');
         this.fpvGimbalTiltEl = this.fpvOsdContainer.querySelector('#fpv-gimbal-tilt');
         this.fpvGpsCoordsEl = this.fpvOsdContainer.querySelector('#fpv-gps-coords');
 
@@ -1003,7 +969,6 @@ export class HUD {
         this.hdgEl.innerText = `HDG: ${((rot[2] % 360 + 360) % 360).toFixed(0)}°`;
 
         this.batEl.innerText = `BAT: ${sensors.batteryPct.toFixed(0)}%`;
-        this.gpsEl.innerText = `GPS: 3D FIX (12 sats)`;
         this.modeEl.innerText = `FC: ${flightMode} | [V] ${camMode}`;
 
         // Update Top-Center Kamikaze Mission Scoring & Fleet Status
@@ -1195,6 +1160,11 @@ export class HUD {
             }
         }
 
+        // Fade the key-hint bar out of the way while mouse-aiming
+        if (this.controlsBarEl) {
+            this.controlsBarEl.style.opacity = isPointerLocked ? '0.22' : '1';
+        }
+
         // Tactical Scope Overlay Update
         if (camera && this.scopeOverlayEl) {
             if (camera.isScoped) {
@@ -1332,13 +1302,6 @@ export class HUD {
                 }
                 if (this.fpvSpdKmhEl) {
                     this.fpvSpdKmhEl.innerText = `${(groundSpeed * 3.6).toFixed(0)} km/h`;
-                }
-
-                if (this.fpvRecTimerEl) {
-                    const elapsedSec = Math.floor(performance.now() / 1000);
-                    const mm = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
-                    const ss = String(elapsedSec % 60).padStart(2, '0');
-                    this.fpvRecTimerEl.innerText = `${mm}:${ss}`;
                 }
 
                 if (this.fpvGimbalTiltEl && camera) {

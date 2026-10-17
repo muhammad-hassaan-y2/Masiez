@@ -649,7 +649,7 @@ async function bootstrap() {
 
         // Turn flight heading & camera view left/right (supports both local Q/E and remote LiveKit yaw)
         if (inYaw !== 0 && !isCrashed) {
-            camera.mouseOrbitYaw += inYaw * 0.035;
+            camera.mouseOrbitYaw += inYaw * 2.2 * deltaSec;
         }
 
         // Auto-deploy next drone after 2.2s detonation inspection when mission is active and drones remain
@@ -680,19 +680,23 @@ async function bootstrap() {
 
         while (physicsAccumulator >= physicsDt) {
             const prevPos = physics.getPosition();
-            const prevVelY = physics.getVelocity()[1];
+            const prevVel = physics.getVelocity();
+            const prevVelY = prevVel[1];
             physics.step(physicsDt);
             physicsAccumulator -= physicsDt;
 
             const subPos = physics.getPosition();
-            const subVel = physics.getVelocity();
+            let subVel = physics.getVelocity();
 
             // When armed, NOT crashed, and in MANUAL flight mode: apply responsive flight dynamics assist
             if (!isCrashed && physics.isArmed() && physics.getMode() === 'MANUAL') {
+                // JS owns flight dynamics here; blend from the pre-step velocity so the
+                // duplicate manual controller inside the WASM cannot skew the direction
+                subVel = [prevVel[0], prevVel[1], prevVel[2]];
                 const masterYawRad = camera.mouseOrbitYaw;
-                const fwdX = Math.sin(masterYawRad);
+                const fwdX = -Math.sin(masterYawRad);
                 const fwdZ = Math.cos(masterYawRad);
-                const rgtX = Math.cos(masterYawRad);
+                const rgtX = -Math.cos(masterYawRad);
                 const rgtZ = -Math.sin(masterYawRad);
 
                 // Equal authority for forward/back (pitch) and strafe left/right (roll)
@@ -1008,7 +1012,7 @@ async function bootstrap() {
 
         // 3. Draw Drone 3D Custom Model (only when in external CHASE mode)
         if (camera.mode === 'CHASE') {
-            modelRenderer.render(renderPass, camera, pos, [-rot[0], rot[1], rot[2]], 2.0, timeSec);
+            modelRenderer.render(renderPass, camera, pos, [-rot[0], rot[1], -rot[2]], 2.0, timeSec);
         }
 
         // 4. Draw Combat Elements: Simple Box Tanks, Soldiers, Ordnance & Explosions

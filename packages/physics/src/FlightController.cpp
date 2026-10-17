@@ -121,10 +121,11 @@ void FlightController::update(float dt, const DronePhysics& physics, bool isArme
 
         // Responsive PUBG-style flight in the mouse-look heading
         if (hasMovement) {
+            // World basis: yaw=0 looks along +Z; yaw increases turn screen-right (toward -X)
             float yawRad = targetYawDeg * (M_PI / 180.0f);
-            float fwdX = std::sin(yawRad);
+            float fwdX = -std::sin(yawRad);
             float fwdZ = std::cos(yawRad);
-            float rgtX = std::cos(yawRad);
+            float rgtX = -std::cos(yawRad);
             float rgtZ = -std::sin(yawRad);
 
             // Fast flight speed: 22 m/s (~80 km/h)

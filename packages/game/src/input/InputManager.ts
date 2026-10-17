@@ -51,7 +51,7 @@ export class InputManager {
                 this.onArmToggle();
             } else if (e.code === KEY_BINDINGS.toggleMode) {
                 this.onModeToggle();
-            } else if (e.code === 'KeyC' || e.code === 'KeyV') {
+            } else if (e.code === 'KeyV') {
                 this.onCameraToggle();
             } else if (e.code === 'KeyR') {
                 this.onSpeedToggle();
