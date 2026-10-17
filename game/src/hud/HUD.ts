@@ -656,13 +656,13 @@ export class HUD {
                 </svg>
             </div>
 
-            <div style="position:absolute; left:26px; top:44%; transform:translateY(-50%); background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.35); border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); min-width:115px;">
+            <div style="position:absolute; left:26px; top:max(50%, 420px); transform:translateY(-50%); background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.35); border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); min-width:115px;">
                 <div style="font-size:10px; color:#88ddff; letter-spacing:1px; margin-bottom:2px;">ALTITUDE (AGL)</div>
                 <div id="fpv-alt-ladder" style="font-size:16px; font-weight:900; color:#00ff88;">0.0 m</div>
                 <div id="fpv-climb-rate" style="font-size:11px; color:#ffcc00; margin-top:2px;">▲ 0.0 m/s</div>
             </div>
 
-            <div style="position:absolute; right:26px; top:44%; transform:translateY(-50%); background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.35); border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); min-width:115px; text-align:right;">
+            <div style="position:absolute; right:26px; top:max(50%, 420px); transform:translateY(-50%); background:rgba(5,15,25,0.75); border:1px solid rgba(0,255,204,0.35); border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.8); min-width:115px; text-align:right;">
                 <div style="font-size:10px; color:#88ddff; letter-spacing:1px; margin-bottom:2px;">GROUND SPEED</div>
                 <div id="fpv-spd-ladder" style="font-size:16px; font-weight:900; color:#00ff88;">0.0 m/s</div>
                 <div id="fpv-spd-kmh" style="font-size:11px; color:#ffcc00; margin-top:2px;">0.0 km/h</div>
