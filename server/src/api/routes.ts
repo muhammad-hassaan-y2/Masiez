@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import fs from 'node:fs';
 import { AccessToken } from 'livekit-server-sdk';
 import { CONFIG } from '../config';
 import { SIMULATION, CAMERA } from 'drone-autonomy-shared';
 import type { SimEngine } from '../sim/SimEngine';
 import type { ReplayStore } from '../sim/ReplayStore';
 import type { LeaderboardStore } from '../api/LeaderboardStore';
+import type { DatasetStore, DatasetFrameRecord } from '../dataset/DatasetStore';
 import { scoreDetection, type CvArenaSubmission, type CvArenaCamera, type GroundTruthItem } from '../cv/ArenaScorer';
 
 export function createRoutes(
@@ -14,7 +16,8 @@ export function createRoutes(
   geofence: any,
   simEngine: SimEngine,
   replayStore: ReplayStore,
-  leaderboard: LeaderboardStore
+  leaderboard: LeaderboardStore,
+  dataset: DatasetStore
 ) {
   const router = Router();
 
@@ -183,6 +186,55 @@ export function createRoutes(
       detectionsCount: submission.detections.length,
       groundTruth,
     });
+  });
+
+  // --- Dataset recorder: labelled frames for training a detector on real renders ---
+
+  router.post('/dataset/session', (req, res) => {
+    const meta = dataset.createSession(String(req.body?.pilot || 'agent'), String(req.body?.mapId || process.env.MAP_ID || 'airfield'));
+    res.json(meta);
+  });
+
+  router.post('/dataset/:id/frames', (req, res) => {
+    const frames = req.body?.frames;
+    if (!Array.isArray(frames)) {
+      res.status(400).json({ error: 'Expected { frames: [{ image, width, height, annotations, drone, mapId, serverTime }] }' });
+      return;
+    }
+    try {
+      res.json(dataset.append(req.params.id, frames as DatasetFrameRecord[]));
+    } catch (err: any) {
+      res.status(404).json({ error: err?.message || 'append failed' });
+    }
+  });
+
+  router.get('/dataset', (_req, res) => {
+    res.json({ sessions: dataset.list() });
+  });
+
+  router.get('/dataset/:id', (req, res) => {
+    const labels = dataset.labels(req.params.id);
+    if (!labels && !dataset.list().some(s => s.id === req.params.id)) {
+      res.status(404).json({ error: 'unknown dataset session' });
+      return;
+    }
+    res.json({
+      id: req.params.id,
+      lines: labels ? labels.trim().split('\n').filter(Boolean).map(l => JSON.parse(l)) : [],
+    });
+  });
+
+  router.get('/dataset/:id/frames/:name', (req, res) => {
+    const file = dataset.frameFile(req.params.id, req.params.name);
+    if (!file) {
+      res.status(404).json({ error: 'frame not found' });
+      return;
+    }
+    res.type('image/jpeg').send(fs.readFileSync(file));
+  });
+
+  router.delete('/dataset/:id', (req, res) => {
+    res.json({ ok: dataset.remove(req.params.id) });
   });
 
   return router;

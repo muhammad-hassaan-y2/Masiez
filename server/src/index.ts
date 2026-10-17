@@ -13,6 +13,7 @@ import { SafetyValidator } from './safety/SafetyValidator';
 import { SimEngine } from './sim/SimEngine';
 import { ReplayStore } from './sim/ReplayStore';
 import { LeaderboardStore } from './api/LeaderboardStore';
+import { DatasetStore } from './dataset/DatasetStore';
 import { createRoutes } from './api/routes';
 import { MCPServer } from './mcp/MCPServer';
 import { Tools } from './mcp/Tools';
@@ -32,6 +33,7 @@ const droneCommands = new DroneCommands(droneState, safetyValidator);
 const simEngine = new SimEngine();
 const replayStore = new ReplayStore();
 const leaderboard = new LeaderboardStore();
+const dataset = new DatasetStore();
 
 const router = new MessageRouter(telemetryStore, droneCommands, simEngine);
 const wsServer = new WebSocketServer(server, router);
@@ -107,7 +109,7 @@ app.get('/health', (req, res) => {
 
 app.use(
   CONFIG.apiBasePath,
-  createRoutes(telemetryStore, droneCommands, droneState, geofence, simEngine, replayStore, leaderboard)
+  createRoutes(telemetryStore, droneCommands, droneState, geofence, simEngine, replayStore, leaderboard, dataset)
 );
 
 // MCP JSON-RPC endpoint for external AI agents
