@@ -207,13 +207,14 @@ export class CityMapRenderer {
     }
 
     public async loadMap(mapDef: MapDefinition, onProgress?: (pct: number) => void): Promise<boolean> {
-        this.activeMapId = mapDef.id;
         if (!mapDef.url) {
             // Procedural map, no GLB needed
+            this.activeMapId = mapDef.id;
             return true;
         }
 
         if (this.mapCache.has(mapDef.id)) {
+            this.activeMapId = mapDef.id;
             console.log(`[CityMapRenderer] Activated cached map: ${mapDef.name}`);
             return true;
         }
@@ -238,6 +239,7 @@ export class CityMapRenderer {
             });
 
             this.mapCache.set(mapDef.id, primitives);
+            this.activeMapId = mapDef.id;
             this.isLoading = false;
             this.currentProgress = 100;
             onProgress?.(100);

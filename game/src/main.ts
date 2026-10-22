@@ -323,6 +323,10 @@ async function bootstrap() {
     }
 
     async function switchMap(mapDef: MapDefinition) {
+        if (cityMapRenderer.isMapLoading()) {
+            missionManager.showNotification(`SECTOR STREAMING — ${cityMapRenderer.getLoadingProgress()}%`);
+            return;
+        }
         hud.setActiveMapButton(mapDef.id);
 
         if (mapDef.id === 'erangel') {
@@ -344,6 +348,7 @@ async function bootstrap() {
 
         if (mapDef.url) {
             hud.showMapLoading(mapDef.name, 10);
+            const stayOn = () => hud.setActiveMapButton(currentMapDef.id);
             try {
                 const ok = await cityMapRenderer.loadMap(mapDef, (pct) => {
                     hud.showMapLoading(mapDef.name, pct);
@@ -351,11 +356,13 @@ async function bootstrap() {
                 if (!ok) {
                     console.warn(`Failed to load ${mapDef.name}`);
                     hud.showMapLoading(mapDef.name, 100);
+                    stayOn();
                     return;
                 }
             } catch (err) {
                 console.error(`Error loading map ${mapDef.name}:`, err);
                 hud.showMapLoading(mapDef.name, 100);
+                stayOn();
                 return;
             }
         }

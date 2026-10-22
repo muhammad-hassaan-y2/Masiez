@@ -937,7 +937,8 @@ export class HUD {
             `;
             btn.onclick = (e) => {
                 e.stopPropagation();
-                this.setActiveMapButton(mapDef.id);
+                // The caller owns the highlight: a switch can be refused while a
+                // sector is still streaming, and then this button would lie.
                 this.onMapSelect?.(mapDef);
                 this.toggleUserMenu(false);
             };
