@@ -696,7 +696,7 @@ export class HUD {
             display: none;
             align-items: center;
             justify-content: center;
-            z-index: 980;
+            z-index: 1010;
             pointer-events: auto;
         `;
 

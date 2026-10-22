@@ -37,7 +37,9 @@ export class InputManager {
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Backquote' || e.key === '`' || e.key === '~') {
                 e.preventDefault();
-                this.onUserMenuToggle();
+                // Auto-repeat fires keydown repeatedly while the key is held, which
+                // would toggle the modal several times and usually leave it closed.
+                if (!e.repeat) this.onUserMenuToggle();
                 return;
             }
 
