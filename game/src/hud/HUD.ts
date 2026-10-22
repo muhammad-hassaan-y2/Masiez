@@ -122,6 +122,60 @@ export class HUD {
         this.initDOM();
     }
 
+    /**
+     * The menu's own stylesheet. Inline styles win over media queries, so the
+     * properties that have to shrink live here instead of on the elements.
+     */
+    private injectMenuStyles(): void {
+        if (document.getElementById('hud-menu-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'hud-menu-styles';
+        style.textContent = `
+            #hud-user-menu-overlay {
+                padding: 24px 14px;
+                overflow-y: auto;
+                overscroll-behavior: contain;
+            }
+            #hud-menu-card {
+                padding: 28px 32px;
+                gap: 22px;
+                max-height: calc(100vh - 48px);
+                max-height: calc(100dvh - 48px);
+                overflow-y: auto;
+                scrollbar-width: thin;
+                scrollbar-color: rgba(0, 255, 204, 0.4) transparent;
+            }
+            #hud-menu-header { padding-bottom: 14px; }
+            #hud-menu-heading { font-size: 20px; }
+            #hud-menu-subheading { font-size: 12px; margin-top: 2px; }
+            #hud-settings-grid, #hud-level-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .hud-menu-span { grid-column: 1 / -1; }
+            .hud-menu-btn, .hud-map-btn {
+                padding: 12px 14px;
+                font-size: 13px;
+                text-align: left;
+            }
+            #hud-livekit-card { padding: 14px 18px; }
+
+            @media (max-width: 640px), (max-height: 720px) {
+                #hud-menu-card { padding: 18px 16px; gap: 16px; }
+                #hud-menu-heading { font-size: 17px; }
+                #hud-menu-header { flex-wrap: wrap; gap: 10px; }
+                .hud-menu-btn, .hud-map-btn { padding: 10px 12px; font-size: 12px; }
+                #hud-livekit-card { padding: 12px 12px; }
+            }
+            @media (max-width: 520px) {
+                #hud-settings-grid, #hud-level-grid { grid-template-columns: 1fr; }
+                #hud-livekit-row { flex-wrap: wrap; }
+                #hud-livekit-row button { flex: 1; }
+                #hud-livekit-details { flex-direction: column; gap: 3px; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
     private initDOM(): void {
         // 1. Top Bar Container
         const topRow = document.createElement('div');
@@ -699,8 +753,10 @@ export class HUD {
             z-index: 1010;
             pointer-events: auto;
         `;
+        this.injectMenuStyles();
 
         const menuCard = document.createElement('div');
+        menuCard.id = 'hud-menu-card';
         menuCard.style.cssText = `
             width: 580px;
             max-width: 92vw;
@@ -708,26 +764,24 @@ export class HUD {
             border: 1px solid rgba(0, 255, 204, 0.55);
             border-radius: 18px;
             box-shadow: 0 12px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 255, 204, 0.25);
-            padding: 28px 32px;
             display: flex;
             flex-direction: column;
-            gap: 22px;
             color: #e8f8f5;
         `;
 
         // Header
         const headerRow = document.createElement('div');
+        headerRow.id = 'hud-menu-header';
         headerRow.style.cssText = `
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid rgba(0, 255, 204, 0.25);
-            padding-bottom: 14px;
         `;
         headerRow.innerHTML = `
             <div>
-                <div style="font-size: 20px; font-weight: 800; color: #00ffcc; letter-spacing: 1.5px;">USER MENU & SETTINGS</div>
-                <div style="font-size: 12px; color: #88bbaa; margin-top: 2px;">Press <b>[ \` ]</b> (Backquote) to resume flight</div>
+                <div id="hud-menu-heading" style="font-weight: 800; color: #00ffcc; letter-spacing: 1.5px;">USER MENU &amp; SETTINGS</div>
+                <div id="hud-menu-subheading" style="color: #88bbaa;">Press <b>[ \` ]</b> (Backquote) to resume flight</div>
             </div>
         `;
         const closeMenuBtn = document.createElement('button');
@@ -766,25 +820,23 @@ export class HUD {
         settingsSection.appendChild(settingsTitle);
 
         const settingsGrid = document.createElement('div');
+        settingsGrid.id = 'hud-settings-grid';
         settingsGrid.style.cssText = `
             display: grid;
-            grid-template-columns: 1fr 1fr;
             gap: 10px;
         `;
 
         const createSettingBtn = (label: string, onClick: () => void): HTMLButtonElement => {
             const btn = document.createElement('button');
             btn.innerHTML = label;
+            btn.className = 'hud-menu-btn';
             btn.style.cssText = `
                 background: rgba(255, 255, 255, 0.06);
                 color: #e8f8f5;
                 border: 1px solid rgba(0, 255, 204, 0.35);
                 border-radius: 10px;
-                padding: 12px 14px;
-                font-size: 13px;
                 font-weight: 700;
                 cursor: pointer;
-                text-align: left;
                 transition: all 0.15s ease;
             `;
             btn.onmouseenter = () => { btn.style.background = 'rgba(0, 255, 204, 0.22)'; };
@@ -807,7 +859,7 @@ export class HUD {
             this.onRestartMission?.();
             this.toggleUserMenu(false);
         });
-        restartMissionBtn.style.gridColumn = 'span 2';
+        restartMissionBtn.classList.add('hud-menu-span');
         restartMissionBtn.style.textAlign = 'center';
         restartMissionBtn.style.color = '#00ffcc';
 
@@ -823,11 +875,11 @@ export class HUD {
 
         // Section 2: LiveKit Robotics WebRTC Hub & Teleoperation Card
         const livekitSection = document.createElement('div');
+        livekitSection.id = 'hud-livekit-card';
         livekitSection.style.cssText = `
             background: rgba(0, 229, 255, 0.08);
             border: 1px solid rgba(0, 229, 255, 0.35);
             border-radius: 12px;
-            padding: 14px 18px;
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -845,6 +897,7 @@ export class HUD {
         livekitSection.appendChild(lkDesc);
 
         const lkUrlRow = document.createElement('div');
+        lkUrlRow.id = 'hud-livekit-row';
         lkUrlRow.style.cssText = `display: flex; gap: 8px; align-items: center;`;
         this.livekitUrlInput = document.createElement('input');
         this.livekitUrlInput.type = 'text';
@@ -885,6 +938,7 @@ export class HUD {
         livekitSection.appendChild(lkUrlRow);
 
         const lkDetailsRow = document.createElement('div');
+        lkDetailsRow.id = 'hud-livekit-details';
         lkDetailsRow.style.cssText = `font-size: 11px; color: #88ddff; display: flex; justify-content: space-between;`;
         lkDetailsRow.innerHTML = `
             <span>TRACK: <b>drone-fpv (30 FPS WebRTC)</b></span>
@@ -913,9 +967,9 @@ export class HUD {
         levelSection.appendChild(levelTitle);
 
         const levelGrid = document.createElement('div');
+        levelGrid.id = 'hud-level-grid';
         levelGrid.style.cssText = `
             display: grid;
-            grid-template-columns: 1fr 1fr;
             gap: 10px;
         `;
 
@@ -923,17 +977,15 @@ export class HUD {
             const mapDef = MAP_CATALOG[i];
             const btn = document.createElement('button');
             btn.innerText = `${mapDef.name.toUpperCase()}`;
+            btn.className = 'hud-map-btn';
             btn.style.cssText = `
                 background: ${i === 0 ? 'rgba(0, 255, 204, 0.35)' : 'rgba(255, 255, 255, 0.08)'};
                 color: ${i === 0 ? '#fff' : '#00ffcc'};
                 border: 1px solid ${i === 0 ? '#00ffcc' : 'rgba(0, 255, 204, 0.25)'};
                 border-radius: 10px;
-                padding: 12px 14px;
-                font-size: 13px;
                 font-weight: 700;
                 cursor: pointer;
                 transition: all 0.2s ease;
-                text-align: left;
             `;
             btn.onclick = (e) => {
                 e.stopPropagation();
