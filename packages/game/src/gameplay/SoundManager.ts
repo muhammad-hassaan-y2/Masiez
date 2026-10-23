@@ -8,6 +8,7 @@ export class SoundManager {
     private ctx?: AudioContext;
     private isMuted = false;
     private initialized = false;
+    private paused = false;
 
     private fanGain?: GainNode;
     private fanFilter?: BiquadFilterNode;
@@ -62,6 +63,10 @@ export class SoundManager {
             whiteNoise.start();
 
             this.initialized = true;
+
+            if (this.paused && this.ctx.state === 'running') {
+                this.ctx.suspend();
+            }
         } catch (e) {
             console.warn("Web Audio API initialization failed:", e);
         }
@@ -69,6 +74,7 @@ export class SoundManager {
 
     public update(motorRpms: [number, number, number, number], rotorOn: boolean): void {
         if (!this.ctx || !this.initialized) return;
+        if (this.paused) return;
         if (this.ctx.state === 'suspended') this.ctx.resume();
 
         const now = this.ctx.currentTime;
@@ -91,6 +97,16 @@ export class SoundManager {
             this.masterGain.gain.setValueAtTime(this.isMuted ? 0.0 : 0.25, this.ctx.currentTime);
         }
         return this.isMuted;
+    }
+
+    public setPaused(paused: boolean): void {
+        this.paused = paused;
+        if (!this.ctx || !this.initialized) return;
+        if (paused) {
+            if (this.ctx.state === 'running') this.ctx.suspend();
+        } else if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+        }
     }
 
     public getMuted(): boolean {

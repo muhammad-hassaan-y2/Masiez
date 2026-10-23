@@ -18,6 +18,13 @@ interface TankInstance {
     obstacle: OBB;
 }
 
+export interface TankTarget {
+    index: number;
+    center: [number, number, number];
+    half: [number, number, number];
+    yaw: number;
+}
+
 const TANKS: TankPlacement[] = [
     { x: 46, z: 38, yaw: 0.5 },
     { x: 62, z: 50, yaw: 2.2 },
@@ -57,6 +64,21 @@ export class TankRenderer {
 
     public getObstacles(): OBB[] {
         return this.instances.map((instance) => instance.obstacle);
+    }
+
+    public getTargets(): TankTarget[] {
+        const targets: TankTarget[] = [];
+        for (let i = 0; i < this.instances.length; i++) {
+            if (this.destroyedTanks.has(i)) continue;
+            const obstacle = this.instances[i].obstacle;
+            targets.push({
+                index: i,
+                center: obstacle.center,
+                half: obstacle.half,
+                yaw: obstacle.yaw,
+            });
+        }
+        return targets;
     }
 
     public get destroyedCount(): number {

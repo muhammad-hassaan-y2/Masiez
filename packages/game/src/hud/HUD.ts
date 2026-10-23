@@ -10,6 +10,7 @@ export interface HudTelemetry {
     speedMode: string;
     muted: boolean;
     targetMode: boolean;
+    frozen: boolean;
     throttle: number;
     pitch: number;
     roll: number;
@@ -62,7 +63,6 @@ export class HUD {
     private flightModeEl!: HTMLElement;
     private thrEl!: HTMLElement;
     private notificationEl!: HTMLElement;
-    private targetHintEl!: HTMLElement;
     private signalLostEl!: HTMLElement;
     private mapClearedEl!: HTMLElement;
 
@@ -73,6 +73,7 @@ export class HUD {
     private userMenuOverlayEl!: HTMLElement;
     private menuAudioBtn!: HTMLButtonElement;
     private menuSpeedBtn!: HTMLButtonElement;
+    private captureStatusEl!: HTMLElement;
     private leftStickDot!: HTMLElement;
     private rightStickDot!: HTMLElement;
 
@@ -80,12 +81,13 @@ export class HUD {
     public onSpeedModeToggle: () => void = () => {};
     public onAudioToggle: () => void = () => {};
     public onRespawn: () => void = () => {};
+    public onCaptureFrame: () => void = () => {};
 
     constructor() {
         this.container = document.createElement('div');
         this.container.id = 'hud-container';
         this.container.style.cssText = `
-            position:absolute;inset:0;pointer-events:none;overflow:hidden;user-select:none;
+            position:absolute;inset:0;pointer-events:none;overflow:hidden;user-select:none;z-index:10;
             font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
             font-size:clamp(13px,1.15vw,20px);color:${TEXT};
             text-shadow:${SHADOW};${TRACKING}
@@ -221,15 +223,6 @@ export class HUD {
             font-weight:600;letter-spacing:0.14em;opacity:0;transition:opacity 0.2s;
         `;
 
-        this.targetHintEl = document.createElement('div');
-        this.targetHintEl.style.cssText = `
-            position:absolute;top:116px;left:50%;transform:translateX(-50%);
-            font-size:0.78em;font-weight:600;letter-spacing:0.16em;opacity:0;
-            border:1px solid rgba(255,255,255,0.45);border-radius:2px;padding:4px 10px;
-            background:rgba(0,0,0,0.25);transition:opacity 0.15s;
-        `;
-        this.targetHintEl.innerText = 'TARGET MODE · T TO EXIT';
-
         const noiseStyle = document.createElement('style');
         noiseStyle.textContent = `
             @keyframes hud-signal-roll {
@@ -286,7 +279,6 @@ export class HUD {
             this.flightModeEl,
             this.thrEl,
             this.notificationEl,
-            this.targetHintEl,
             this.signalLostEl,
             this.mapClearedEl,
             this.userMenuOverlayEl,
@@ -411,14 +403,22 @@ export class HUD {
 
         this.menuSpeedBtn = button('SPEED: <b>TURBO</b>', () => this.onSpeedModeToggle());
         this.menuAudioBtn = button('AUDIO: <b>ACTIVE</b>', () => this.onAudioToggle());
+        const captureBtn = button('CAPTURE FRAME + LABELS', () => this.onCaptureFrame());
+        captureBtn.style.gridColumn = 'span 2';
+        captureBtn.style.textAlign = 'center';
         const respawnBtn = button('RESPAWN DRONE', () => {
             this.onRespawn();
             this.toggleUserMenu(false);
         });
         respawnBtn.style.gridColumn = 'span 2';
         respawnBtn.style.textAlign = 'center';
-        grid.append(this.menuSpeedBtn, this.menuAudioBtn, respawnBtn);
+        grid.append(this.menuSpeedBtn, this.menuAudioBtn, captureBtn, respawnBtn);
         card.appendChild(grid);
+
+        this.captureStatusEl = document.createElement('div');
+        this.captureStatusEl.innerText = 'SAVES PNG + COCO JSON';
+        this.captureStatusEl.style.cssText = 'font-size:10px;letter-spacing:0.12em;color:rgba(150,215,255,0.75);margin-top:-6px;';
+        card.appendChild(this.captureStatusEl);
 
         const controllerTitle = document.createElement('div');
         controllerTitle.innerText = 'TRANSMITTER · MODE 2';
@@ -476,6 +476,10 @@ export class HUD {
         this.notificationEl.style.opacity = text ? '1' : '0';
     }
 
+    public setCaptureStatus(text: string): void {
+        this.captureStatusEl.innerText = text;
+    }
+
     public setSignalLost(active: boolean): void {
         this.signalLostEl.style.display = active ? 'flex' : 'none';
     }
@@ -512,7 +516,7 @@ export class HUD {
         const now = performance.now();
         const dt = Math.min((now - this.lastBatterySample) / 1000, 0.5);
         this.lastBatterySample = now;
-        if (t.armed) this.mahUsed += amps * dt / 3.6;
+        if (t.armed && !t.frozen) this.mahUsed += amps * dt / 3.6;
         this.ampEl.innerText = `${amps.toFixed(1)}A`;
         this.mahEl.innerText = `${this.mahUsed.toFixed(0)}mAh`;
 
@@ -539,7 +543,6 @@ export class HUD {
             bar.style.opacity = quality >= thresholds[i] ? '1' : '0.22';
         });
 
-        this.targetHintEl.style.opacity = t.targetMode ? '1' : '0';
         this.menuAudioBtn.innerHTML = `AUDIO: <b>${t.muted ? 'MUTED' : 'ACTIVE'}</b>`;
         this.menuSpeedBtn.innerHTML = `SPEED: <b>${t.speedMode}</b>`;
     }

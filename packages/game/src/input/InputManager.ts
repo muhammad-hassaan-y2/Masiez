@@ -8,9 +8,14 @@ export class InputManager {
     public onSpeedToggle: () => void = () => {};
     public onMuteToggle: () => void = () => {};
     public onUserMenuToggle: () => void = () => {};
+    public onTargetSelect: (clientX: number, clientY: number) => void = () => {};
+    public onTargetModeChange: (active: boolean) => void = () => {};
 
     public isMenuOpen: boolean = false;
     public targetMode: boolean = false;
+    public pointerX: number = 0;
+    public pointerY: number = 0;
+    public pointerActive: boolean = false;
 
     private keys: { [key: string]: boolean } = {};
     private canvas: HTMLCanvasElement;
@@ -20,13 +25,9 @@ export class InputManager {
         this.canvas.style.cursor = 'none';
 
         window.addEventListener('keydown', (e) => {
-            if (e.code === 'Escape' || e.code === 'Backquote' || e.key === '`' || e.key === '~') {
+            if (e.code === 'Backquote' || e.key === '`' || e.key === '~') {
                 e.preventDefault();
-                if (this.targetMode) {
-                    this.setTargetMode(false);
-                } else {
-                    this.onUserMenuToggle();
-                }
+                this.onUserMenuToggle();
                 return;
             }
 
@@ -55,12 +56,32 @@ export class InputManager {
         window.addEventListener('blur', () => {
             this.keys = {};
         });
+
+        this.canvas.addEventListener('mousemove', (e) => {
+            this.pointerX = e.clientX;
+            this.pointerY = e.clientY;
+            this.pointerActive = true;
+        });
+
+        this.canvas.addEventListener('click', (e) => {
+            if (!this.targetMode || this.isMenuOpen) return;
+            this.onTargetSelect(e.clientX, e.clientY);
+        });
     }
 
     public setTargetMode(active: boolean): void {
         if (this.targetMode === active) return;
         this.targetMode = active;
         this.canvas.style.cursor = active ? 'crosshair' : 'none';
+        this.onTargetModeChange(active);
+    }
+
+    public clearInputs(): void {
+        this.keys = {};
+        this.throttle = 0;
+        this.pitch = 0;
+        this.roll = 0;
+        this.yaw = 0;
     }
 
     public update(): void {
