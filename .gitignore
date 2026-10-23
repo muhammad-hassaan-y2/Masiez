@@ -3,7 +3,6 @@ dist/
 *.log
 *.tsbuildinfo
 .DS_Store
-*.png
 .trash
 .venv/
 __pycache__/

@@ -1,17 +1,4 @@
 services:
-  caddy:
-    image: caddy:2-alpine
-    depends_on:
-      - game
-    ports:
-      - "8443:443"
-      - "8443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./certs:/etc/caddy/certs:ro
-      - caddy_data:/data
-      - caddy_config:/config
-
   game:
     build:
       context: .
@@ -22,8 +9,3 @@ services:
       - "5173:5173"
     volumes:
       - ./packages/game:/workspace/packages/game
-      - ./packages/shared:/workspace/packages/shared
-
-volumes:
-  caddy_data:
-  caddy_config:

@@ -16,7 +16,7 @@ export class SkyRenderer {
         const device = this.ctx.device;
 
         this.uniformBuffer = device.createBuffer({
-            size: 128,
+            size: 64,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
@@ -49,19 +49,13 @@ export class SkyRenderer {
         });
     }
 
-    public render(pass: GPURenderPassEncoder, camera: Camera, time: number): void {
-        const uniforms = new Float32Array(24);
-        uniforms.set(camera.invViewProjMatrix, 0); // 16 floats
-        // sunDir (3 floats)
-        uniforms[16] = 0.6;
-        uniforms[17] = 0.8;
-        uniforms[18] = 0.4;
-        uniforms[19] = time;
-
+    public render(pass: GPURenderPassEncoder, camera: Camera): void {
+        const uniforms = new Float32Array(16);
+        uniforms.set(camera.invViewProjMatrix);
         this.ctx.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
         pass.setPipeline(this.pipeline);
         pass.setBindGroup(0, this.bindGroup);
-        pass.draw(3); // Fullscreen triangle
+        pass.draw(3);
     }
 }

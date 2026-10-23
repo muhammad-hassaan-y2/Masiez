@@ -2,14 +2,8 @@
   "name": "drone-autonomy",
   "private": true,
   "workspaces": [
-    "packages/shared",
     "packages/game"
   ],
-  "scripts": {
-    "dev": "npm run dev --workspace=packages/game",
-    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/game",
-    "gen:certs": "bash certs/generate_certs.sh"
-  },
   "devDependencies": {
     "typescript": "^5.6.0"
   }

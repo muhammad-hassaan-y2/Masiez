@@ -126,168 +126,50 @@ export class Camera {
     public viewProjMatrix = Mat4.create();
     public invViewProjMatrix = Mat4.create();
 
-    public fovRad: number = Math.PI / 2.15; // 84° authentic wide-angle FPV operator lens
-    public baseFovRad: number = Math.PI / 2.15;
-    public mode: 'FPV' | 'CHASE' | 'ORBIT' = 'FPV';
+    public fovRad: number = Math.PI / 2.15;
 
-    // Tactical Scope Gearing & ADS
-    public isScoped: boolean = false;
-    public scopeGear: number = 1; // 1X, 2X, 4X, 8X magnification
-    public static readonly SCOPE_GEARS = [1, 2, 4, 8];
-
-    // Interactive mouse look offsets
-    public mouseOrbitYaw: number = 0;   // radians (roundward 360°)
-    public mouseOrbitPitch: number = 0.28; // radians (~16 deg down, natural forward-horizon pitch)
-    public baseDistance: number = 2.6; // Tight view right behind the drone in chase mode
+    public headingRad: number = 0;
+    public pitchRad: number = 0.10;
     public currentGroundElevation: number = 0.0;
-
-    private initialized: boolean = false;
-
-    public toggleScope(): void {
-        this.isScoped = !this.isScoped;
-        if (!this.isScoped) {
-            this.scopeGear = 1;
-        } else if (this.scopeGear <= 1) {
-            this.scopeGear = 2; // Default to 2X on entering scope
-        }
-    }
-
-    public cycleScopeGear(forward: boolean = true): void {
-        const gears = Camera.SCOPE_GEARS;
-        let idx = gears.indexOf(this.scopeGear);
-        if (idx === -1) idx = 0;
-        if (forward) {
-            idx = (idx + 1) % gears.length;
-        } else {
-            idx = (idx - 1 + gears.length) % gears.length;
-        }
-        this.scopeGear = gears[idx];
-        if (this.scopeGear > 1) {
-            this.isScoped = true;
-        } else {
-            this.isScoped = false;
-        }
-    }
-
-    public applyMouseDelta(dx: number, dy: number, zoomDelta: number): void {
-        // High magnification reduces mouse sensitivity proportionally for rock-steady sniper aiming
-        const zoomScale = this.isScoped ? (1.0 / Math.max(1.0, this.scopeGear * 0.75)) : 1.0;
-        const sensitivity = 0.0035 * zoomScale;
-        // Horizontal orbit: mouse right turns the view right
-        this.mouseOrbitYaw += dx * sensitivity;
-        // Vertical pitch: mouse up tilts the view up (standard FPS look)
-        this.mouseOrbitPitch += dy * sensitivity;
-
-        // FPV can look freely above the horizon; chase only dips slightly below the drone
-        const minPitch = this.mode === 'FPV' ? -1.25 : -0.45;
-        this.mouseOrbitPitch = Math.max(minPitch, Math.min(1.25, this.mouseOrbitPitch));
-        if (!this.isScoped) {
-            this.baseDistance = Math.max(1.5, Math.min(8.0, this.baseDistance + zoomDelta));
-        }
-    }
-
-    public projectToScreen(
-        worldPos: [number, number, number],
-        screenWidth: number,
-        screenHeight: number
-    ): { x: number; y: number; visible: boolean } {
-        const m = this.viewProjMatrix;
-        const clipX = worldPos[0] * m[0] + worldPos[1] * m[4] + worldPos[2] * m[8] + m[12];
-        const clipY = worldPos[0] * m[1] + worldPos[1] * m[5] + worldPos[2] * m[9] + m[13];
-        const clipZ = worldPos[0] * m[2] + worldPos[1] * m[6] + worldPos[2] * m[10] + m[14];
-        const clipW = worldPos[0] * m[3] + worldPos[1] * m[7] + worldPos[2] * m[11] + m[15];
-
-        if (clipW <= 0.01) {
-            return { x: 0, y: 0, visible: false };
-        }
-
-        const ndcX = clipX / clipW;
-        const ndcY = clipY / clipW;
-        const ndcZ = clipZ / clipW;
-
-        const visible = (ndcX >= -1.05 && ndcX <= 1.05 && ndcY >= -1.05 && ndcY <= 1.05 && ndcZ >= 0.0 && ndcZ <= 1.0);
-        const screenX = (ndcX * 0.5 + 0.5) * screenWidth;
-        const screenY = (-ndcY * 0.5 + 0.5) * screenHeight;
-
-        return { x: screenX, y: screenY, visible };
-    }
 
     public update(
         dronePos: [number, number, number],
-        droneYawDeg: number,
+        headingRad: number,
         aspect: number,
         groundElevationAtCam?: number,
         droneRollDeg: number = 0
     ): void {
+        this.headingRad = headingRad;
+
         const baseElev = groundElevationAtCam !== undefined
             ? Math.max(this.currentGroundElevation, groundElevationAtCam)
             : this.currentGroundElevation;
 
-        if (this.mode === 'FPV') {
-            // First Person View: Camera is rigidly attached to the drone front nose gimbal
-            // World basis: yaw=0 looks along +Z; yaw increases turn screen-right (toward -X)
-            const fwdX = -Math.sin(this.mouseOrbitYaw);
-            const fwdZ = Math.cos(this.mouseOrbitYaw);
+        const fwdX = -Math.sin(headingRad);
+        const fwdZ = Math.cos(headingRad);
 
-            const noseDist = 0.32;
-            const noseHeight = 0.08;
-            this.position[0] = dronePos[0] + fwdX * noseDist;
-            this.position[1] = Math.max(baseElev + 0.15, dronePos[1] + noseHeight);
-            this.position[2] = dronePos[2] + fwdZ * noseDist;
+        const noseDist = 0.32;
+        const noseHeight = 0.08;
+        this.position[0] = dronePos[0] + fwdX * noseDist;
+        this.position[1] = Math.max(baseElev + 0.15, dronePos[1] + noseHeight);
+        this.position[2] = dronePos[2] + fwdZ * noseDist;
 
-            // Look forward along mouse gaze vector
-            const lookDist = 100.0;
-            const gazeFwdX = fwdX * Math.cos(this.mouseOrbitPitch);
-            const gazeFwdY = -Math.sin(this.mouseOrbitPitch);
-            const gazeFwdZ = fwdZ * Math.cos(this.mouseOrbitPitch);
+        const lookDist = 100.0;
+        const gazeFwdX = fwdX * Math.cos(this.pitchRad);
+        const gazeFwdY = -Math.sin(this.pitchRad);
+        const gazeFwdZ = fwdZ * Math.cos(this.pitchRad);
 
-            this.target[0] = this.position[0] + gazeFwdX * lookDist;
-            this.target[1] = this.position[1] + gazeFwdY * lookDist;
-            this.target[2] = this.position[2] + gazeFwdZ * lookDist;
+        this.target[0] = this.position[0] + gazeFwdX * lookDist;
+        this.target[1] = this.position[1] + gazeFwdY * lookDist;
+        this.target[2] = this.position[2] + gazeFwdZ * lookDist;
 
-            // Natural bank tilt into turns from drone roll
-            const rollRad = (droneRollDeg * Math.PI / 180.0) * 0.40;
-            const upX = -Math.sin(rollRad);
-            const upY = Math.cos(rollRad);
-            const upZ = 0;
+        const rollRad = (droneRollDeg * Math.PI / 180.0) * 0.40;
+        const upX = -Math.sin(rollRad);
+        const upY = Math.cos(rollRad);
+        const upZ = 0;
 
-            const fpvBaseFov = Math.PI / 2.15; // 84° wide-angle FPV operator lens
-            const targetFov = this.isScoped ? (fpvBaseFov / Math.max(1, this.scopeGear)) : fpvBaseFov;
-            this.fovRad += (targetFov - this.fovRad) * 0.22;
-
-            Mat4.perspective(this.projMatrix, this.fovRad, aspect, 0.05, 2500.0);
-            Mat4.lookAt(this.viewMatrix, this.position, this.target, [upX, upY, upZ]);
-            Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
-            Mat4.invert(this.invViewProjMatrix, this.viewProjMatrix);
-            return;
-        }
-
-        // Third-Person Chase Mode: Orbit locked behind the drone
-        const fwdX = -Math.sin(this.mouseOrbitYaw);
-        const fwdZ = Math.cos(this.mouseOrbitYaw);
-        const distHoriz = this.baseDistance * Math.cos(this.mouseOrbitPitch);
-        const distVert  = this.baseDistance * Math.sin(this.mouseOrbitPitch);
-
-        const targetX = dronePos[0] - fwdX * distHoriz;
-        const targetZ = dronePos[2] - fwdZ * distHoriz;
-        const minAllowedY = baseElev + 0.40;
-        const targetY = Math.max(minAllowedY, dronePos[1] + distVert);
-
-        this.position[0] = targetX;
-        this.position[1] = targetY;
-        this.position[2] = targetZ;
-        this.initialized = true;
-
-        const lookDist = 50.0;
-        this.target[0] = dronePos[0] + fwdX * Math.cos(this.mouseOrbitPitch) * lookDist;
-        this.target[1] = dronePos[1] - Math.sin(this.mouseOrbitPitch) * lookDist;
-        this.target[2] = dronePos[2] + fwdZ * Math.cos(this.mouseOrbitPitch) * lookDist;
-
-        const targetFov = this.isScoped ? (this.baseFovRad / Math.max(1, this.scopeGear)) : this.baseFovRad;
-        this.fovRad += (targetFov - this.fovRad) * 0.22;
-
-        Mat4.perspective(this.projMatrix, this.fovRad, aspect, 0.1, 2000.0);
-        Mat4.lookAt(this.viewMatrix, this.position, this.target, [0, 1, 0]);
+        Mat4.perspective(this.projMatrix, this.fovRad, aspect, 0.05, 2500.0);
+        Mat4.lookAt(this.viewMatrix, this.position, this.target, [upX, upY, upZ]);
         Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
         Mat4.invert(this.invViewProjMatrix, this.viewProjMatrix);
     }

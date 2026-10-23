@@ -1,33 +1,33 @@
 import { GPUDeviceContext } from './gpu/Device';
 import { PhysicsBridge } from './wasm/PhysicsBridge';
-import { TerrainRenderer } from './gpu/TerrainRenderer';
-import { StructuresRenderer } from './gpu/StructuresRenderer';
-import { ModelRenderer } from './gpu/ModelRenderer';
+import { FieldRenderer } from './gpu/FieldRenderer';
+import { TankRenderer } from './gpu/TankRenderer';
 import { SkyRenderer } from './gpu/SkyRenderer';
-import { CityMapRenderer, MAP_CATALOG, MapDefinition } from './gpu/CityMapRenderer';
 import { SoundManager } from './gameplay/SoundManager';
-import { MissionManager } from './gameplay/MissionManager';
 import { CollisionSystem } from './gameplay/CollisionSystem';
-import { EntityManager, BaseEntity } from './gameplay/EntityManager';
-import { WeaponSystem } from './gameplay/WeaponSystem';
-import { CombatRenderer } from './gpu/CombatRenderer';
+import { terrainHeight } from './gameplay/Terrain';
 import { Camera } from './scene/Camera';
-import { LiveKitRoboticsClient } from './network/LiveKitRoboticsClient';
-import { BrowserAIController } from './ai/BrowserAIController';
-import { AiMode } from './ai/types';
 import { InputManager } from './input/InputManager';
 import { HUD } from './hud/HUD';
-import { Telemetry, DroneFlightState, FlightMode, GPSFixType, SensorStatus } from 'drone-autonomy-shared';
 
 type SpeedMode = 'CRUISE' | 'SPORT' | 'TURBO';
 
-async function bootstrap() {
-    console.log("=== Initializing Masiez C++ / WebGPU Kamikaze FPV Drone Simulation ===");
+interface SpeedProfile {
+    maxSpeed: number;
+    climbSpeed: number;
+    descentSpeed: number;
+    accelRate: number;
+    brakeRate: number;
+    maxTiltDeg: number;
+}
 
+const SPAWN_POSITION: [number, number, number] = [0, 8, 0];
+const GROUND_HEIGHT = 0.0;
+
+async function bootstrap() {
     const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;
     if (!canvas) throw new Error("renderCanvas element not found");
 
-    // 1. Initialize WebGPU Context
     const gpu = new GPUDeviceContext(canvas);
     const okGPU = await gpu.init();
     if (!okGPU) {
@@ -40,7 +40,6 @@ async function bootstrap() {
         return;
     }
 
-    // 2. Initialize C++ WebAssembly Physics Engine
     const physics = new PhysicsBridge();
     const okWasm = await physics.init();
     if (!okWasm) {
@@ -48,658 +47,201 @@ async function bootstrap() {
     }
     physics.arm(true);
 
-    // 3. Audio & Mission & Renderers
     const soundManager = new SoundManager();
-    const missionManager = new MissionManager(gpu, soundManager);
-    await missionManager.init();
 
     const skyRenderer = new SkyRenderer(gpu);
     await skyRenderer.init();
 
-    const terrainRenderer = new TerrainRenderer(gpu);
-    await terrainRenderer.init();
+    const fieldRenderer = new FieldRenderer(gpu);
+    await fieldRenderer.init();
 
-    const structuresRenderer = new StructuresRenderer(gpu);
-    await structuresRenderer.init();
+    const tankRenderer = new TankRenderer(gpu);
+    await tankRenderer.init();
 
-    const modelRenderer = new ModelRenderer(gpu);
-    await modelRenderer.init();
-    await modelRenderer.loadGLB('/assets/models/drone_custom.glb');
-
-    const cityMapRenderer = new CityMapRenderer(gpu);
-    await cityMapRenderer.init();
-
-    // 4. Combat Systems: Building Collisions, Moving Entities & Kamikaze Warhead System
     const collisionSystem = new CollisionSystem();
-    const entityManager = new EntityManager();
-    const weaponSystem = new WeaponSystem();
-    const combatRenderer = new CombatRenderer(gpu);
-    await combatRenderer.init();
+    for (const obstacle of tankRenderer.getObstacles()) {
+        collisionSystem.addOBB(obstacle.center, obstacle.half, obstacle.yaw, obstacle.id);
+    }
 
-    // 5. Camera, Input, HUD, LiveKit Robot Link
     const camera = new Camera();
-    camera.mode = 'FPV'; // Default to First Person Operator View
     const input = new InputManager(canvas);
     const hud = new HUD();
-    const livekit = new LiveKitRoboticsClient();
-    const browserAI = new BrowserAIController();
 
-    // Flight Speed Modes & Dynamic Performance Profiles
     const speedModes: SpeedMode[] = ['CRUISE', 'SPORT', 'TURBO'];
-    let speedModeIndex = 0;
-
-    interface SpeedProfile {
-        maxSpeed: number;       // Top horizontal speed (m/s)
-        climbSpeed: number;     // Vertical climb speed (m/s)
-        descentSpeed: number;   // Controlled descent speed (m/s)
-        accelRate: number;      // Acceleration sharpness (1/s)
-        brakeRate: number;      // Air brake deceleration sharpness (1/s)
-        maxTiltDeg: number;     // Visual banking and pitch tilt limit (degrees)
-    }
+    let speedModeIndex = speedModes.length - 1;
 
     const speedProfiles: Record<SpeedMode, SpeedProfile> = {
         'CRUISE': {
-            maxSpeed: 20.0,      // ~72 km/h: Smooth, stable, agile exploration & target aiming
-            climbSpeed: 8.5,     // Responsive vertical climb
-            descentSpeed: 6.0,   // Controlled descent
-            accelRate: 20.0,     // 0.25s snappy response
-            brakeRate: 16.0,     // Crisp stop without glide
-            maxTiltDeg: 22.0,    // Stable tilt
+            maxSpeed: 20.0,
+            climbSpeed: 14.0,
+            descentSpeed: 17.0,
+            accelRate: 20.0,
+            brakeRate: 16.0,
+            maxTiltDeg: 22.0,
         },
         'SPORT': {
-            maxSpeed: 36.0,      // ~130 km/h: High-performance tactical attack dive
-            climbSpeed: 16.0,    // Rapid evasive climb
-            descentSpeed: 11.0,  // Fast dive descent
-            accelRate: 25.0,     // Punchy instant acceleration
-            brakeRate: 20.0,     // Instant air-brakes
-            maxTiltDeg: 32.0,    // Aggressive racing banking
+            maxSpeed: 36.0,
+            climbSpeed: 24.0,
+            descentSpeed: 29.0,
+            accelRate: 25.0,
+            brakeRate: 20.0,
+            maxTiltDeg: 32.0,
         },
         'TURBO': {
-            maxSpeed: 55.0,      // ~198 km/h: Terminal kamikaze sprint across vast maps
-            climbSpeed: 26.0,    // Rocket-like vertical burst
-            descentSpeed: 16.0,  // High-speed terminal dive
-            accelRate: 30.0,     // Hypersonic racer throttle
-            brakeRate: 24.0,     // Authoritative air-brakes
-            maxTiltDeg: 42.0,    // Extreme high-g racing tilt
+            maxSpeed: 55.0,
+            climbSpeed: 38.0,
+            descentSpeed: 44.0,
+            accelRate: 30.0,
+            brakeRate: 24.0,
+            maxTiltDeg: 42.0,
         },
     };
 
     let currentRollDeg = 0;
     let currentPitchDeg = 0;
+    let headingRad = 0;
+    let flightStart = performance.now();
+    const YAW_RATE = 1.8;
+    const RESPAWN_DELAY_MS = 1000;
+    const BLAST_RADIUS = 5.5;
+    let exploded = false;
+    let explodedAt = 0;
+    let destroyedThisLoss = 0;
+    let mapCleared = false;
 
-    // Kamikaze Detonation & Multi-Drone Fleet State
-    const DEFAULT_DRONE_FLEET = 8;
-    let isCrashed = false;
-    let crashReason = "";
-    let crashTime = 0;
-
-    function triggerKamikazeDetonation(
-        reason: string,
-        hitPos?: [number, number, number],
-        directHitEntity?: BaseEntity | null
-    ) {
-        if (isCrashed) return;
-        isCrashed = true;
-        crashReason = reason;
-        crashTime = performance.now();
-        physics.arm(false);
-
-        const crashPt = hitPos || physics.getPosition();
-
-        // Detonate onboard explosive warhead & evaluate blast radius against hostile targets
-        const destroyedTargets = weaponSystem.detonateWarhead(
-            crashPt,
-            entityManager,
-            soundManager,
-            directHitEntity
-        );
-
-        // Update kamikaze mission scoring & remaining drone count
-        const stats = missionManager.recordKamikazeStrike(
-            destroyedTargets,
-            entityManager.getDestroyedHostileCount(),
-            reason
-        );
-
-        if (destroyedTargets.length > 0) {
-            weaponSystem.hitMarkerTimer = 1.6;
-            weaponSystem.hitMarkerText = `💥 TARGET HIT (+${destroyedTargets.length * 1000} PTS) — ${stats.targetsHit}/${stats.totalTargets} DESTROYED`;
-        } else {
-            weaponSystem.hitMarkerTimer = 1.0;
-            weaponSystem.hitMarkerText = `WARHEAD DETONATED — NO TARGET HIT`;
-        }
-
-        // Publish reliable strike outcome over LiveKit Robotics DataChannel
-        livekit.publishStrikeEvent({
-            reason,
-            hitTarget: destroyedTargets.length > 0,
-            destroyedTargets: destroyedTargets.map(t => t.roleName),
-            mission: stats,
-        });
-
-        const curVel = physics.getVelocity();
-        physics.setVelocity(curVel[0] * 0.12, Math.min(curVel[1], -1.5), curVel[2] * 0.12);
-        currentRollDeg += (Math.random() - 0.5) * 80;
-        currentPitchDeg += (Math.random() - 0.5) * 80;
-
-        console.log(
-            `[KAMIKAZE DETONATION] Reason: ${reason} | Hit: ${destroyedTargets.length} target(s) | ` +
-            `Targets: ${stats.targetsHit}/${stats.totalTargets} | Drones Left: ${stats.dronesRemaining}/${stats.totalDrones}`
-        );
+    let notifyUntil = 0;
+    function notify(text: string): void {
+        hud.setNotification(text);
+        notifyUntil = performance.now() + 2600;
     }
 
-    function deployNextDrone() {
-        isCrashed = false;
-        crashReason = "";
-        physics.setMode('MANUAL');
-        physics.resetPosition(currentMapDef.spawnPos[0], currentMapDef.spawnPos[1], currentMapDef.spawnPos[2]);
-        physics.setVelocity(0, 0, 0);
-        physics.setRotation(0, 0, 0);
-        physics.arm(true);
-        currentRollDeg = 0;
-        currentPitchDeg = 0;
-        camera.mouseOrbitYaw = 0;
-        camera.mouseOrbitPitch = 0;
-        weaponSystem.lockedEntity = null;
-        soundManager.playTargetAcquired();
-        const droneNum = Math.min(
-            missionManager.totalDrones,
-            missionManager.totalDrones - missionManager.dronesRemaining + 1
-        );
-        missionManager.showNotification(
-            `🚀 FPV DRONE #${droneNum} ARMED (${missionManager.dronesRemaining}/${missionManager.totalDrones} LEFT) — TARGETS: ${missionManager.targetsHit}/${missionManager.totalTargets}`
-        );
-        console.log(`[Drone] Deployed FPV Drone #${droneNum} at base (${missionManager.dronesRemaining} remaining)`);
-    }
-
-    function restartMission() {
-        if (currentMapDef.id === 'airfield') {
-            entityManager.initAirfieldEntities();
-        } else {
-            entityManager.initMapEntities(currentMapDef.id, currentMapDef.spawnPos, currentMapDef.groundElevation);
-        }
-        missionManager.startMission(entityManager.getTotalHostileCount(), DEFAULT_DRONE_FLEET);
-        deployNextDrone();
-        missionManager.showNotification(
-            `🎯 NEW MISSION: DESTROY ${missionManager.totalTargets} HOSTILE TARGETS (${missionManager.totalDrones} KAMIKAZE DRONES)`
-        );
-    }
-
-    function handleRecoverOrRestart() {
-        if (
-            missionManager.missionStatus === 'SUCCESS' ||
-            missionManager.missionStatus === 'FAILED' ||
-            missionManager.dronesRemaining <= 0
-        ) {
-            restartMission();
-        } else {
-            deployNextDrone();
-        }
-    }
-
-    // Active Map Management: Start directly on Tactical Airfield Runway (Original First Map)
-    let currentMapDef: MapDefinition = MAP_CATALOG[0];
-    hud.setActiveMapButton(currentMapDef.id);
-    physics.setGroundOffset(currentMapDef.groundElevation);
-    physics.resetPosition(currentMapDef.spawnPos[0], currentMapDef.spawnPos[1], currentMapDef.spawnPos[2]);
-    camera.baseDistance = currentMapDef.camDistance;
-    camera.currentGroundElevation = currentMapDef.groundElevation;
-    physics.clearHeightmap();
-
-    // Initialize colliders, entities & kamikaze mission for Map 1 (Tactical Airfield)
-    collisionSystem.clearColliders();
-    collisionSystem.initAirfieldColliders();
-    entityManager.initAirfieldEntities();
-    missionManager.startMission(entityManager.getTotalHostileCount(), DEFAULT_DRONE_FLEET);
-
-    // Stream map GLB if applicable
-    if (currentMapDef.url) {
-        cityMapRenderer.loadMap(currentMapDef).catch(e => console.warn(e));
-    }
-
-    async function switchMap(mapDef: MapDefinition) {
-        hud.setActiveMapButton(mapDef.id);
-
-        if (mapDef.id === 'erangel') {
-            try {
-                const res = await fetch('/assets/maps/erangel_heightmap.bin');
-                if (res.ok) {
-                    const buf = await res.arrayBuffer();
-                    const u16 = new Uint16Array(buf);
-                    physics.loadHeightmap(u16, 256, 256, 20000.0, 800.0, 20000.0);
-                    collisionSystem.loadHeightmap(u16, 256, 256, 20000.0, 800.0, 20000.0, mapDef.groundElevation);
-                }
-            } catch (e) {
-                console.warn("Heightmap load skipped:", e);
-            }
-        } else {
-            physics.clearHeightmap();
-            collisionSystem.clearHeightmap();
-        }
-
-        if (mapDef.url) {
-            hud.showMapLoading(mapDef.name, 10);
-            try {
-                const ok = await cityMapRenderer.loadMap(mapDef, (pct) => {
-                    hud.showMapLoading(mapDef.name, pct);
-                });
-                if (!ok) {
-                    console.warn(`Failed to load ${mapDef.name}`);
-                    hud.showMapLoading(mapDef.name, 100);
-                    return;
-                }
-            } catch (err) {
-                console.error(`Error loading map ${mapDef.name}:`, err);
-                hud.showMapLoading(mapDef.name, 100);
-                return;
-            }
-        }
-
-        currentMapDef = mapDef;
-        // Configure physics for new map
-        physics.setGroundOffset(mapDef.groundElevation);
-        physics.resetPosition(mapDef.spawnPos[0], mapDef.spawnPos[1], mapDef.spawnPos[2]);
+    function respawn(): void {
+        physics.setGroundOffset(GROUND_HEIGHT);
+        physics.resetPosition(SPAWN_POSITION[0], SPAWN_POSITION[1], SPAWN_POSITION[2]);
         physics.setVelocity(0, 0, 0);
         physics.setRotation(0, 0, 0);
         physics.arm(true);
         physics.setMode('MANUAL');
-        isCrashed = false;
-        crashReason = "";
+        physicsAccumulator = 0;
         currentRollDeg = 0;
         currentPitchDeg = 0;
-        camera.mouseOrbitYaw = 0;
-        camera.mouseOrbitPitch = 0;
-        camera.baseDistance = mapDef.camDistance;
-        camera.currentGroundElevation = mapDef.groundElevation;
-        weaponSystem.lockedEntity = null;
+        headingRad = 0;
+        exploded = false;
+        explodedAt = 0;
+        hud.setSignalLost(false);
+        hud.setMapCleared(mapCleared);
+        camera.currentGroundElevation = GROUND_HEIGHT;
+        flightStart = performance.now();
+        hud.resetTrip();
+        const strike = destroyedThisLoss > 0
+            ? ` · ${destroyedThisLoss} TARGET${destroyedThisLoss > 1 ? 'S' : ''} DESTROYED`
+            : '';
+        notify(`NEW DRONE READY${strike}`);
+        destroyedThisLoss = 0;
+    }
 
-        // Populate solid building colliders & moving entities for this map
+    physics.setGroundOffset(GROUND_HEIGHT);
+    physics.setMode('MANUAL');
+    camera.currentGroundElevation = GROUND_HEIGHT;
+
+    function cycleSpeedMode(): void {
+        speedModeIndex = (speedModeIndex + 1) % speedModes.length;
+        notify(`SPEED MODE: ${speedModes[speedModeIndex]}`);
+    }
+
+    function toggleMute(): void {
+        const isMuted = soundManager.toggleMute();
+        notify(isMuted ? "AUDIO MUTED" : "AUDIO ACTIVE");
+    }
+
+    function redeployMap(): void {
+        mapCleared = false;
+        hud.setMapCleared(false);
+        tankRenderer.resetTanks();
         collisionSystem.clearColliders();
-        if (mapDef.id === 'airfield') {
-            collisionSystem.initAirfieldColliders();
-            entityManager.initAirfieldEntities();
-        } else if (mapDef.id === 'erangel') {
-            collisionSystem.initErangelColliders(mapDef.groundElevation);
-            entityManager.initMapEntities(mapDef.id, mapDef.spawnPos, mapDef.groundElevation);
-        } else {
-            const glbColliders = cityMapRenderer.getMapColliders(mapDef.id);
-            for (const b of glbColliders) {
-                collisionSystem.addAABB(b.min, b.max, b.name || b.id);
-            }
-            entityManager.initMapEntities(mapDef.id, mapDef.spawnPos, mapDef.groundElevation);
+        for (const obstacle of tankRenderer.getObstacles()) {
+            collisionSystem.addOBB(obstacle.center, obstacle.half, obstacle.yaw, obstacle.id);
         }
-
-        // Start fresh kamikaze mission for this sector
-        missionManager.startMission(entityManager.getTotalHostileCount(), DEFAULT_DRONE_FLEET);
-        soundManager.playTargetAcquired();
-        missionManager.showNotification(
-            `SECTOR DEPLOYED: ${mapDef.name.toUpperCase()} — DESTROY ${missionManager.totalTargets} TARGETS (${missionManager.totalDrones} DRONES)`
-        );
-
-        console.log(`[Game] Switched to map: ${mapDef.name} (${collisionSystem.colliderCount} colliders)`);
+        respawn();
     }
 
-    // Input Handlers
     input.onArmToggle = () => {
-        if (isCrashed) {
-            handleRecoverOrRestart();
+        if (exploded) return;
+        if (mapCleared) {
+            redeployMap();
             return;
         }
         const nextArmed = !physics.isArmed();
         physics.arm(nextArmed);
-        console.log(`Drone ${nextArmed ? 'ARMED' : 'DISARMED'}`);
+        notify(nextArmed ? "DRONE ARMED" : "DRONE DISARMED");
     };
 
-    input.onModeToggle = () => {
-        if (isCrashed) return;
-        const nextMode = physics.getMode() === 'MANUAL' ? 'AUTOPILOT' : 'MANUAL';
-        physics.setMode(nextMode);
-        console.log(`Flight Mode: ${nextMode}`);
-    };
-
-    input.onCameraToggle = () => {
-        camera.mode = camera.mode === 'FPV' ? 'CHASE' : 'FPV';
-        soundManager.playTargetAcquired();
-        missionManager.showNotification(camera.mode === 'FPV' ? "VIEW: OPERATOR FPV (FIRST-PERSON)" : "VIEW: THIRD-PERSON CHASE");
-        console.log(`Camera Mode: ${camera.mode}`);
-    };
-
-    input.onSpeedToggle = () => {
-        if (isCrashed) {
-            handleRecoverOrRestart();
-            return;
-        }
-        speedModeIndex = (speedModeIndex + 1) % speedModes.length;
-        const mode = speedModes[speedModeIndex];
-        soundManager.playSpeedModeChime(mode);
-        missionManager.showNotification(`SPEED MODE: ${mode}`);
-    };
-
-    input.onMuteToggle = () => {
-        const isMuted = soundManager.toggleMute();
-        missionManager.showNotification(isMuted ? "AUDIO MUTED" : "AUDIO ACTIVE");
-    };
-
+    input.onSpeedToggle = cycleSpeedMode;
+    input.onMuteToggle = toggleMute;
     input.onUserMenuToggle = () => {
         hud.toggleUserMenu();
     };
 
     hud.onMenuOpenChange = (isOpen: boolean) => {
         input.isMenuOpen = isOpen;
-        if (isOpen && document.pointerLockElement) {
-            try {
-                document.exitPointerLock();
-            } catch (err) {}
+        if (isOpen) {
+            input.setTargetMode(false);
         }
     };
+    hud.onSpeedModeToggle = cycleSpeedMode;
+    hud.onAudioToggle = toggleMute;
+    hud.onRespawn = respawn;
 
-    input.onScopeToggle = () => {
-        camera.toggleScope();
-        input.isScoped = camera.isScoped;
-        soundManager.playScopeZoom(camera.scopeGear);
-        missionManager.showNotification(camera.isScoped ? `OPTICAL ZOOM ACTIVE: ${camera.scopeGear}X` : "OPTICAL ZOOM DEACTIVATED");
-    };
-
-    input.onScopeGearChange = (forward: boolean) => {
-        camera.cycleScopeGear(forward);
-        input.isScoped = camera.isScoped;
-        soundManager.playScopeZoom(camera.scopeGear);
-        missionManager.showNotification(`OPTICAL ZOOM: ${camera.scopeGear}X`);
-    };
-
-    input.onLockTarget = () => {
-        weaponSystem.toggleLock(camera, entityManager, soundManager);
-        if (weaponSystem.lockedEntity) {
-            missionManager.showNotification(`KAMIKAZE TARGET LOCKED: ${weaponSystem.lockedEntity.roleName.toUpperCase()}`);
-        } else {
-            missionManager.showNotification("TARGET LOCK DISENGAGED");
-        }
-    };
-
-    input.onEmergencyStop = () => {
-        physics.arm(false);
-        console.log("EMERGENCY STOP!");
-    };
-
-    // HUD & User Menu Button Handlers
-    hud.onMapSelect = (mapDef) => {
-        switchMap(mapDef);
-    };
-
-    hud.onSpeedModeToggle = () => {
-        input.onSpeedToggle();
-    };
-
-    hud.onAudioToggle = () => {
-        input.onMuteToggle();
-    };
-
-    hud.onScopeToggle = () => {
-        input.onScopeToggle();
-    };
-
-    hud.onScopeGearToggle = () => {
-        input.onScopeGearChange(true);
-    };
-
-    hud.onLockTargetToggle = () => {
-        input.onLockTarget();
-    };
-
-    hud.onRecoverDrone = () => {
-        handleRecoverOrRestart();
-    };
-
-    hud.onRestartMission = () => {
-        restartMission();
-    };
-
-    hud.onCameraToggle = () => {
-        input.onCameraToggle();
-    };
-
-    // LiveKit is an ALTERNATIVE transport (models run in-browser by default).
-    // It never auto-connects; operators enable it from the User Menu, and the
-    // RPC methods below become live the moment a connection is established.
-    hud.onAiModeToggle = () => {
-        const order: AiMode[] = ['OFF', 'DETECT', 'FOLLOW'];
-        const next = order[(order.indexOf(browserAI.getMode()) + 1) % order.length];
-        browserAI.setMode(next);
-        missionManager.showNotification(
-            next === 'OFF'
-                ? "IN-BROWSER AI: OFF (MANUAL FLIGHT)"
-                : `IN-BROWSER AI: ${next}${next === 'FOLLOW' ? ' — DETECT & PURSUE TARGETS' : ' — DETECTION OVERLAY ONLY'}`
-        );
-        soundManager.playTargetAcquired();
-    };
-
-    // Register Full Suite of LiveKit Robotics RPC Methods (for Jupyter / Kaggle / Remote Operators)
-    livekit.registerRpc('teleop.takeoff', async (params) => {
-        physics.arm(true);
-        physics.setMode('AUTOPILOT');
-        const p = physics.getPosition();
-        const alt = Number(params?.altitude || 15);
-        physics.setAutopilotTarget(p[0], p[1] + alt, p[2]);
-        missionManager.showNotification(`LIVEKIT RPC: TAKEOFF TO ${alt}M`);
-        return { ok: true, altitude: alt };
-    });
-
-    livekit.registerRpc('teleop.land', async () => {
-        physics.setMode('AUTOPILOT');
-        const p = physics.getPosition();
-        physics.setAutopilotTarget(p[0], currentMapDef.groundElevation + 0.1, p[2]);
-        missionManager.showNotification("LIVEKIT RPC: AUTOLAND INITIATED");
-        return { ok: true };
-    });
-
-    livekit.registerRpc('teleop.emergency_stop', async () => {
-        physics.arm(false);
-        missionManager.showNotification("LIVEKIT RPC: EMERGENCY MOTOR CUT");
-        return { ok: true };
-    });
-
-    livekit.registerRpc('teleop.arm', async (params) => {
-        const armState = params?.armed !== false;
-        physics.arm(armState);
-        missionManager.showNotification(`LIVEKIT RPC: ${armState ? 'ARMED' : 'DISARMED'}`);
-        return { ok: true, armed: armState };
-    });
-
-    livekit.registerRpc('teleop.set_speed_mode', async (params) => {
-        const mode = (params?.mode || 'CRUISE').toUpperCase() as SpeedMode;
-        if (speedModes.includes(mode)) {
-            speedModeIndex = speedModes.indexOf(mode);
-            soundManager.playSpeedModeChime(mode);
-            missionManager.showNotification(`LIVEKIT RPC: SPEED ${mode}`);
-            return { ok: true, mode };
-        }
-        return { ok: false, error: 'Invalid speed mode' };
-    });
-
-    livekit.registerRpc('teleop.set_flight_mode', async (params) => {
-        const mode = params?.mode === 'AUTOPILOT' ? 'AUTOPILOT' : 'MANUAL';
-        physics.setMode(mode);
-        missionManager.showNotification(`LIVEKIT RPC: MODE ${mode}`);
-        return { ok: true, mode };
-    });
-
-    livekit.registerRpc('teleop.deploy_next_drone', async () => {
-        handleRecoverOrRestart();
-        return { ok: true, dronesRemaining: missionManager.dronesRemaining };
-    });
-
-    livekit.registerRpc('teleop.restart_mission', async () => {
-        restartMission();
-        return { ok: true, totalTargets: missionManager.totalTargets, totalDrones: missionManager.totalDrones };
-    });
-
-    livekit.registerRpc('teleop.select_map', async (params) => {
-        const mapId = params?.id || params?.mapId;
-        const mapDef = MAP_CATALOG.find(m => m.id === mapId);
-        if (mapDef) {
-            await switchMap(mapDef);
-            return { ok: true, mapId: mapDef.id, mapName: mapDef.name };
-        }
-        return { ok: false, error: `Map '${mapId}' not found` };
-    });
-
-    livekit.registerRpc('teleop.get_state', async () => {
-        return {
-            armed: physics.isArmed(),
-            mode: physics.getMode(),
-            speedMode: speedModes[speedModeIndex],
-            position: physics.getPosition(),
-            rotation: physics.getRotation(),
-            velocity: physics.getVelocity(),
-            mission: missionManager.getStats(),
-            aliveHostiles: entityManager.getAliveHostileTargets().length,
-        };
-    });
-
-    livekit.onRemoteCommand = (cmd: any) => {
-        console.log("[LiveKit Robotics Teleop] Received command:", cmd);
-        if (cmd.type === 'arm_and_takeoff') {
-            physics.arm(true);
-            physics.setMode('AUTOPILOT');
-            const p = physics.getPosition();
-            const alt = (cmd.params as any)?.altitude || 15;
-            physics.setAutopilotTarget(p[0], p[1] + alt, p[2]);
-        } else if (cmd.type === 'land') {
-            physics.setMode('AUTOPILOT');
-            const p = physics.getPosition();
-            physics.setAutopilotTarget(p[0], currentMapDef.groundElevation + 0.1, p[2]);
-        } else if (cmd.type === 'emergency_stop') {
-            physics.arm(false);
-        } else if (cmd.type === 'deploy_next_drone') {
-            handleRecoverOrRestart();
-        } else if (cmd.type === 'restart_mission') {
-            restartMission();
-        }
-    };
-
-    hud.onLiveKitToggle = (customUrl?: string) => {
-        if (livekit.status === 'streaming' || livekit.status === 'connected') {
-            livekit.disconnect();
-            missionManager.showNotification("LIVEKIT STREAM DISCONNECTED");
-        } else {
-            livekit.connect(canvas, customUrl);
-            missionManager.showNotification("CONNECTING TO LIVEKIT...");
-        }
-    };
-
-    // 6. Game Loop: Fixed Timestep Physics (250Hz) + WebGPU Render
     let lastTime = performance.now();
     let physicsAccumulator = 0;
     const physicsDt = 1.0 / 250.0;
-    let lastTelemetrySend = 0;
-
-    // War AI effect callbacks are allocated once, not per frame
-    const warCallbacks = weaponSystem.createWarCallbacks(soundManager);
 
     function frame(now: number) {
         const deltaSec = Math.min((now - lastTime) / 1000.0, 0.1);
         lastTime = now;
 
-        // Input update & Mouse Look / Zoom
+        if (exploded && now - explodedAt >= RESPAWN_DELAY_MS) {
+            respawn();
+        }
+
         input.update();
 
-        // Control arbitration: remote LiveKit teleop > in-browser AI follow > human keyboard
-        const isRemoteTeleoperating = livekit.isTeleoperating();
-        const aiAxes = browserAI.update(deltaSec, {
-            canvas,
-            camera,
-            physics,
-            entityManager,
-            isCrashed,
-            humanInputActive: input.hasAnyFlightInput(),
-        });
+        const inThrottle = input.throttle;
+        const inPitch = input.pitch;
+        const inRoll = input.roll;
+        const inYaw = input.yaw;
 
-        let inThrottle = input.throttle;
-        let inPitch = input.pitch;
-        let inRoll = input.roll;
-        let inYaw = input.yaw;
-
-        if (isRemoteTeleoperating) {
-            // Apply remote continuous teleoperation axes directly from LiveKit
-            inThrottle = livekit.teleopAxes.throttle;
-            inPitch = livekit.teleopAxes.pitch;
-            inRoll = livekit.teleopAxes.roll;
-            inYaw = livekit.teleopAxes.yaw;
-
-            if (!physics.isArmed() && !isCrashed && (Math.abs(inThrottle) > 0.05 || Math.abs(inPitch) > 0.05 || Math.abs(inRoll) > 0.05)) {
-                physics.arm(true);
-            }
-        } else if (aiAxes && !isCrashed) {
-            // In-browser autonomy (RT-DETR + PPO over ONNX Runtime Web) is flying
-            inThrottle = aiAxes.throttle;
-            inPitch = aiAxes.pitch;
-            inRoll = aiAxes.roll;
-            inYaw = aiAxes.yaw;
-
-            if (!physics.isArmed() && (Math.abs(inThrottle) > 0.05 || Math.abs(inPitch) > 0.05 || Math.abs(inRoll) > 0.05)) {
-                physics.arm(true);
-            }
-        } else if (input.hasAnyFlightInput() && !physics.isArmed() && !isCrashed) {
+        if (!exploded && input.hasAnyFlightInput() && !physics.isArmed()) {
             physics.arm(true);
         }
 
-        const mouse = input.consumeMouseDelta();
-        const zoom = input.consumeMouseZoom();
-        camera.applyMouseDelta(mouse.dx, mouse.dy, zoom);
-
-        // Turn flight heading & camera view left/right (supports both local Q/E and remote LiveKit yaw)
-        if (inYaw !== 0 && !isCrashed) {
-            camera.mouseOrbitYaw += inYaw * 2.2 * deltaSec;
+        if (!exploded && inYaw !== 0) {
+            headingRad += inYaw * YAW_RATE * deltaSec;
         }
+        const headingDeg = headingRad * (180.0 / Math.PI);
 
-        // Auto-deploy next drone after 2.2s detonation inspection when mission is active and drones remain
-        if (isCrashed && missionManager.missionStatus === 'ACTIVE' && missionManager.dronesRemaining > 0 && (now - crashTime >= 2200)) {
-            deployNextDrone();
-        }
+        const speedProfile = speedProfiles[speedModes[speedModeIndex]];
 
-        // Emit residual smoke & sparks while airframe is crashed
-        if (isCrashed && (now - crashTime < 4500) && Math.random() < 0.25) {
-            const curPos = physics.getPosition();
-            weaponSystem.spawnImpactParticles(curPos, [0, 1, 0], [0.4, 0.4, 0.4, 0.7], 2);
-        }
+        physics.setManualInput(inThrottle, inPitch, inRoll, headingDeg);
 
-        // Apply Speed Mode dynamic profile & performance controls
-        const currentSpeedMode = speedModes[speedModeIndex];
-        const profile = speedProfiles[currentSpeedMode];
-
-        // Direct master heading (in degrees) from camera mouse orientation
-        const masterHeadingDeg = camera.mouseOrbitYaw * (180.0 / Math.PI);
-        if (!isCrashed) {
-            physics.setManualInput(inThrottle, inPitch, inRoll, masterHeadingDeg);
-        } else {
-            physics.setManualInput(0, 0, 0, masterHeadingDeg);
-        }
-
-        // Fixed-timestep C++ simulation steps (250Hz sub-stepping with high-agility movement, continuous collision & ground clamp)
         physicsAccumulator += deltaSec;
 
-        while (physicsAccumulator >= physicsDt) {
+        while (!exploded && physicsAccumulator >= physicsDt) {
             const prevPos = physics.getPosition();
             const prevVel = physics.getVelocity();
-            const prevVelY = prevVel[1];
             physics.step(physicsDt);
             physicsAccumulator -= physicsDt;
 
             const subPos = physics.getPosition();
             let subVel = physics.getVelocity();
 
-            // When armed, NOT crashed, and in MANUAL flight mode: apply responsive flight dynamics assist
-            if (!isCrashed && physics.isArmed() && physics.getMode() === 'MANUAL') {
-                // JS owns flight dynamics here; blend from the pre-step velocity so the
-                // duplicate manual controller inside the WASM cannot skew the direction
+            if (physics.isArmed() && physics.getMode() === 'MANUAL') {
                 subVel = [prevVel[0], prevVel[1], prevVel[2]];
-                const masterYawRad = camera.mouseOrbitYaw;
-                const fwdX = -Math.sin(masterYawRad);
-                const fwdZ = Math.cos(masterYawRad);
-                const rgtX = -Math.cos(masterYawRad);
-                const rgtZ = -Math.sin(masterYawRad);
+                const fwdX = -Math.sin(headingRad);
+                const fwdZ = Math.cos(headingRad);
+                const rgtX = -Math.cos(headingRad);
+                const rgtZ = -Math.sin(headingRad);
 
-                // Equal authority for forward/back (pitch) and strafe left/right (roll)
                 let subInP = inPitch;
                 let subInR = inRoll;
                 const inputMag = Math.hypot(subInP, subInR);
@@ -708,16 +250,14 @@ async function bootstrap() {
                     subInR /= inputMag;
                 }
 
-                // 1. Horizontal Flight (WASD + Remote Teleop + Speed Mode Scaling)
                 if (inputMag > 0.02) {
-                    const targetVx = (fwdX * subInP + rgtX * subInR) * profile.maxSpeed;
-                    const targetVz = (fwdZ * subInP + rgtZ * subInR) * profile.maxSpeed;
-                    const blendH = Math.min(1.0, physicsDt * profile.accelRate);
+                    const targetVx = (fwdX * subInP + rgtX * subInR) * speedProfile.maxSpeed;
+                    const targetVz = (fwdZ * subInP + rgtZ * subInR) * speedProfile.maxSpeed;
+                    const blendH = Math.min(1.0, physicsDt * speedProfile.accelRate);
                     subVel[0] += (targetVx - subVel[0]) * blendH;
                     subVel[2] += (targetVz - subVel[2]) * blendH;
                 } else {
-                    // Crisp Air-Brakes: halts horizontal drift smoothly and instantly
-                    const blendBrake = Math.min(1.0, physicsDt * profile.brakeRate);
+                    const blendBrake = Math.min(1.0, physicsDt * speedProfile.brakeRate);
                     subVel[0] += (0.0 - subVel[0]) * blendBrake;
                     subVel[2] += (0.0 - subVel[2]) * blendBrake;
                     if (Math.hypot(subVel[0], subVel[2]) < 0.10) {
@@ -726,266 +266,128 @@ async function bootstrap() {
                     }
                 }
 
-                // 2. Vertical Flight (Shift / Space for climb, Ctrl / C for descent, or remote teleop)
                 if (inThrottle > 0.05) {
-                    const targetVy = profile.climbSpeed * inThrottle;
-                    const blendClimb = Math.min(1.0, physicsDt * 18.0);
+                    const targetVy = speedProfile.climbSpeed * inThrottle;
+                    const blendClimb = Math.min(1.0, physicsDt * 24.0);
                     subVel[1] += (targetVy - subVel[1]) * blendClimb;
                 } else if (inThrottle < -0.05) {
-                    const targetVy = -profile.descentSpeed * Math.abs(inThrottle);
-                    const blendDescend = Math.min(1.0, physicsDt * 18.0);
+                    const targetVy = -speedProfile.descentSpeed * Math.abs(inThrottle);
+                    const blendDescend = Math.min(1.0, physicsDt * 24.0);
                     subVel[1] += (targetVy - subVel[1]) * blendDescend;
                 } else {
-                    // Active Altitude Hold when vertical input is neutral
                     const blendHover = Math.min(1.0, physicsDt * 14.0);
                     subVel[1] += (0.0 - subVel[1]) * blendHover;
                     if (Math.abs(subVel[1]) < 0.05) subVel[1] = 0;
                 }
 
-                // Integrate position accurately with enhanced subVel
                 subPos[0] = prevPos[0] + subVel[0] * physicsDt;
                 subPos[1] = prevPos[1] + subVel[1] * physicsDt;
                 subPos[2] = prevPos[2] + subVel[2] * physicsDt;
 
-                // 3. Dynamic Visual Banking & Pitch Tilt
-                const targetPitch = subInP * profile.maxTiltDeg;
-                let targetRoll = subInR * profile.maxTiltDeg;
+                const targetPitch = subInP * speedProfile.maxTiltDeg;
+                let targetRoll = subInR * speedProfile.maxTiltDeg;
                 if (inYaw !== 0) {
                     targetRoll += inYaw * 10.0;
                 }
                 const blendTilt = Math.min(1.0, physicsDt * 22.0);
                 currentRollDeg += (targetRoll - currentRollDeg) * blendTilt;
                 currentPitchDeg += (targetPitch - currentPitchDeg) * blendTilt;
-                physics.setRotation(currentRollDeg, currentPitchDeg, masterHeadingDeg);
-            } else if (isCrashed) {
-                // When crashed: zero propulsion, friction on ground, gravity pulls down
-                subVel[0] *= 0.90;
-                subVel[2] *= 0.90;
-                subVel[1] -= 9.81 * physicsDt;
-                subPos[0] = prevPos[0] + subVel[0] * physicsDt;
-                subPos[1] = prevPos[1] + subVel[1] * physicsDt;
-                subPos[2] = prevPos[2] + subVel[2] * physicsDt;
+                physics.setRotation(currentRollDeg, currentPitchDeg, headingDeg);
             }
 
-            // 1. Strict Ground Height Clamp on EVERY sub-step
-            const groundY = collisionSystem.getGroundHeight(
-                currentMapDef.id,
-                subPos[0],
-                subPos[2],
-                currentMapDef.groundElevation
-            );
-            const minGroundY = groundY + 0.28; // Drone landing clearance buffer
+            let hardGroundImpact = false;
+            const minGroundY = terrainHeight(subPos[0], subPos[2]) + 0.12;
             if (subPos[1] < minGroundY) {
+                hardGroundImpact = prevVel[1] < -4.2 ||
+                    Math.abs(currentPitchDeg) > 52 ||
+                    Math.abs(currentRollDeg) > 52;
                 subPos[1] = minGroundY;
-                // Severe downward impact or extreme tilt into ground -> Kamikaze Detonation
-                if (!isCrashed && (prevVelY < -4.2 || Math.abs(currentPitchDeg) > 52 || Math.abs(currentRollDeg) > 52)) {
-                    triggerKamikazeDetonation("HIGH-SPEED GROUND IMPACT", [subPos[0], minGroundY, subPos[2]], null);
-                }
                 if (subVel[1] < 0) subVel[1] = 0;
-                // If landed on ground and neutral, stabilize upright
-                if (!isCrashed && inThrottle <= 0 && Math.hypot(inPitch, inRoll) <= 0.05) {
+                if (inThrottle <= 0 && Math.hypot(inPitch, inRoll) <= 0.05) {
                     currentRollDeg *= 0.85;
                     currentPitchDeg *= 0.85;
-                    physics.setRotation(currentRollDeg, currentPitchDeg, masterHeadingDeg);
+                    physics.setRotation(currentRollDeg, currentPitchDeg, headingDeg);
                 }
             }
 
-            // 2. Strict Continuous Collision vs Buildings & Structures on EVERY sub-step -> DETONATES ON IMPACT
-            const col = collisionSystem.resolveDroneCollision(subPos, subVel, 0.45, prevPos, groundY);
-            if (col.hit) {
-                if (!isCrashed) {
-                    triggerKamikazeDetonation(col.obstacleName || 'OBSTACLE / STRUCTURE', [subPos[0], subPos[1], subPos[2]], null);
-                }
-            }
-
-            // 3. Collision vs Moving Entities (Hostile Tanks & Soldiers) -> DIRECT KAMIKAZE STRIKE
-            if (!isCrashed) {
-                for (const ent of entityManager.entities) {
-                    if (!ent.isAlive) continue;
-                    const entMinY = ent.pos[1];
-                    const entMaxY = ent.pos[1] + ent.height;
-                    if (subPos[1] >= entMinY - 0.45 && subPos[1] <= entMaxY + 0.45) {
-                        const dXZ = Math.hypot(subPos[0] - ent.pos[0], subPos[2] - ent.pos[2]);
-                        if (dXZ < 0.55 + ent.radius) {
-                            triggerKamikazeDetonation(ent.roleName.toUpperCase(), [subPos[0], subPos[1], subPos[2]], ent);
-                            break;
-                        }
-                    }
-                }
-            }
+            const groundAtDrone = terrainHeight(subPos[0], subPos[2]);
+            const collision = collisionSystem.resolveDroneCollision(subPos, subVel, 0.25, prevPos, groundAtDrone);
 
             physics.setPosition(subPos[0], subPos[1], subPos[2]);
             physics.setVelocity(subVel[0], subVel[1], subVel[2]);
-        }
 
-        // Get updated physics state from WASM
-        const pos = physics.getPosition();
-        const rot = physics.getRotation();
-        const vel = physics.getVelocity();
-        const motorRPMs = physics.getMotorRPMs();
-        const sensors = physics.getSensors();
-        const isArmed = physics.isArmed();
-        const mode = physics.getMode();
+            if (hardGroundImpact || collision.hit) {
+                exploded = true;
+                explodedAt = now;
 
-        // 2. Update Real-Time Battlefield War AI (Tanks & Soldier Battalions)
-        entityManager.update(
-            deltaSec,
-            pos,
-            (x, z) => collisionSystem.getGroundHeight(currentMapDef.id, x, z, currentMapDef.groundElevation),
-            warCallbacks
-        );
+                const blastX = subPos[0];
+                const blastY = subPos[1];
+                const blastZ = subPos[2];
 
-        // 3. Update Drone Explosive Warhead & Battlefield Ordnance (Tank Shells, Tracers, Artillery)
-        weaponSystem.update(
-            deltaSec,
-            collisionSystem,
-            entityManager,
-            missionManager,
-            soundManager,
-            currentMapDef.id,
-            currentMapDef.groundElevation,
-            pos
-        );
-
-        // Check if a Hostile Tank Shell directly struck the player's drone
-        if (!isCrashed) {
-            for (let i = weaponSystem.projectiles.length - 1; i >= 0; --i) {
-                const pr = weaponSystem.projectiles[i];
-                if (pr.faction === 'HOSTILE' && (pr.kind === 'SAM_MISSILE' || pr.kind === 'TANK_SHELL')) {
-                    const dDrone = Math.hypot(pr.pos[0] - pos[0], pr.pos[1] - pos[1], pr.pos[2] - pos[2]);
-                    if (dDrone < 1.65) {
-                        weaponSystem.projectiles.splice(i, 1);
-                        triggerKamikazeDetonation(`INTERCEPTED BY HOSTILE ${pr.kind === 'SAM_MISSILE' ? 'MISSILE' : 'TANK SHELL'}`, [pos[0], pos[1], pos[2]], null);
-                        break;
+                let destroyedCount = 0;
+                for (const collider of tankRenderer.getColliders()) {
+                    if (!collider.id.startsWith('tank_')) continue;
+                    const tankIndex = Number(collider.id.slice(5));
+                    const px = Math.max(collider.min[0], Math.min(blastX, collider.max[0]));
+                    const py = Math.max(collider.min[1], Math.min(blastY, collider.max[1]));
+                    const pz = Math.max(collider.min[2], Math.min(blastZ, collider.max[2]));
+                    const dist = Math.hypot(px - blastX, py - blastY, pz - blastZ);
+                    if (dist <= BLAST_RADIUS && tankRenderer.destroyTank(tankIndex)) {
+                        collisionSystem.removeObstacle(collider.id);
+                        destroyedCount++;
                     }
                 }
+
+                destroyedThisLoss = destroyedCount;
+                if (tankRenderer.destroyedCount >= tankRenderer.totalCount) {
+                    mapCleared = true;
+                }
+                hud.setSignalLost(true);
+                physics.arm(false);
+                physics.setVelocity(0, 0, 0);
+                break;
             }
         }
 
-        const groundSpeed = Math.sqrt(vel[0]*vel[0] + vel[2]*vel[2]);
+        const pos = physics.getPosition();
+        const rot = physics.getRotation();
+        const motorRPMs = physics.getMotorRPMs();
+        const sensors = physics.getSensors();
+        const isArmed = physics.isArmed();
 
-        // Update Mission checkpoints & racing timer
-        missionManager.update(pos, deltaSec);
+        soundManager.update(motorRPMs, !exploded);
 
-        // Update Sound Synthesizer
-        soundManager.update(isArmed, motorRPMs, groundSpeed, vel[1]);
-
-        // Update Camera (strictly clamped above local terrain/ground elevation)
         const aspect = canvas.width / canvas.height;
-        const groundAtCam = collisionSystem.getGroundHeight(
-            currentMapDef.id,
-            camera.position[0],
-            camera.position[2],
-            currentMapDef.groundElevation
-        );
-        camera.update(pos, rot[2], aspect, groundAtCam, rot[0]);
+        const groundAtDrone = terrainHeight(pos[0], pos[2]);
+        camera.currentGroundElevation = groundAtDrone;
+        camera.update(pos, headingRad, aspect, groundAtDrone, rot[0]);
 
-        // Aim Focus, Lock-On Tracking & Kamikaze Closure Speed Calculation
-        const aimFocus = weaponSystem.updateTargetLock(
-            camera,
-            collisionSystem,
-            entityManager,
-            soundManager,
-            deltaSec,
-            currentMapDef.id,
-            vel
-        );
-
-        // Update HUD with Kamikaze Reticle, Target Markers, Fleet Counter & Score
-        hud.update(
-            sensors,
-            pos,
-            vel,
-            rot,
-            isArmed && !isCrashed,
-            isCrashed ? 'CRASHED' : mode,
-            currentSpeedMode,
-            camera.mode,
-            missionManager.notificationText,
-            soundManager.getMuted(),
-            isCrashed,
-            crashReason,
-            weaponSystem.hitMarkerTimer,
-            weaponSystem.hitMarkerText,
-            aimFocus,
-            input.isPointerLocked,
-            camera,
-            livekit.getMetrics(),
-            browserAI.getDetectionsForHud() ?? livekit.getLatestDetections(),
-            missionManager.getStats(),
-            entityManager.getAliveHostileTargets()
-        );
-
-        hud.setAiDisplay(browserAI.getMode(), browserAI.getStatus());
-
-        // Send telemetry to LiveKit DataChannel at 10Hz
-        if (now - lastTelemetrySend >= 100) {
-            lastTelemetrySend = now;
-            const telemetry: Telemetry = {
-                timestamp: Date.now(),
-                state: isCrashed ? DroneFlightState.EMERGENCY_LANDING : (isArmed ? (sensors.altitudeAGL > 0.5 ? DroneFlightState.HOVERING : DroneFlightState.ARMED) : DroneFlightState.IDLE),
-                flightMode: mode === 'MANUAL' ? FlightMode.MANUAL : FlightMode.AUTOPILOT,
-                armed: isArmed && !isCrashed,
-                position: {
-                    latitude: sensors.latitude,
-                    longitude: sensors.longitude,
-                    altitude_amsl: sensors.altitudeAMSL,
-                    altitude_agl: sensors.altitudeAGL,
-                },
-                attitude: {
-                    roll: rot[0],
-                    pitch: rot[1],
-                    yaw: rot[2],
-                    rollRate: sensors.gyro[0],
-                    pitchRate: sensors.gyro[1],
-                    yawRate: sensors.gyro[2],
-                },
-                groundSpeed: groundSpeed,
-                verticalSpeed: vel[1],
-                heading: ((rot[2] % 360) + 360) % 360,
-                battery: {
-                    voltage: 22.2 * (0.6 + 0.4 * (sensors.batteryPct / 100)),
-                    current: 5.0,
-                    percentage: sensors.batteryPct,
-                    remainingTime: 1200,
-                    cellCount: 4,
-                    temperature: 30,
-                },
-                gps: {
-                    fix: GPSFixType.FIX_3D,
-                    satellites: 12,
-                    hdop: 0.9,
-                    vdop: 1.1,
-                    position: {
-                        latitude: sensors.latitude,
-                        longitude: sensors.longitude,
-                        altitude_amsl: sensors.altitudeAMSL,
-                        altitude_agl: sensors.altitudeAGL,
-                    }
-                },
-                wind: { speed: 1.5, direction: 180 },
-                sensors: {
-                    imu: SensorStatus.HEALTHY,
-                    compass: SensorStatus.HEALTHY,
-                    barometer: SensorStatus.HEALTHY,
-                    gps: SensorStatus.HEALTHY,
-                    rangefinder: SensorStatus.HEALTHY,
-                    cameraForward: SensorStatus.HEALTHY,
-                    cameraDown: SensorStatus.NOT_PRESENT,
-                },
-                rangefinderAlt: sensors.rangefinder,
-            };
-
-            // LiveKit Robotics Data Channel (Sub-100ms Telemetry Transport)
-            livekit.publishTelemetry(telemetry, missionManager.getStats());
+        if (notifyUntil > 0 && now > notifyUntil) {
+            hud.setNotification('');
+            notifyUntil = 0;
         }
 
-        // WebGPU Render Pass
+        hud.update({
+            sensors,
+            armed: isArmed,
+            speedMode: speedModes[speedModeIndex],
+            muted: soundManager.getMuted(),
+            targetMode: input.targetMode,
+            throttle: inThrottle,
+            pitch: inPitch,
+            roll: inRoll,
+            yaw: inYaw,
+            motorRpms: motorRPMs,
+            position: pos,
+            headingDeg,
+            elapsedSec: (now - flightStart) / 1000,
+        });
+
         const commandEncoder = gpu.device.createCommandEncoder();
         const renderPass = commandEncoder.beginRenderPass({
             colorAttachments: [{
                 view: gpu.context.getCurrentTexture().createView(),
-                clearValue: { r: 0.45, g: 0.65, b: 0.88, a: 1.0 },
+                clearValue: { r: 0.72, g: 0.78, b: 0.8, a: 1.0 },
                 loadOp: 'clear',
                 storeOp: 'store',
             }],
@@ -997,26 +399,9 @@ async function bootstrap() {
             },
         });
 
-        const timeSec = now / 1000.0;
-
-        // 1. Draw Atmospheric Sky
-        skyRenderer.render(renderPass, camera, timeSec);
-
-        // 2. Draw Active Map
-        if (currentMapDef.id === 'airfield') {
-            terrainRenderer.render(renderPass, camera, timeSec);
-            structuresRenderer.render(renderPass, camera, timeSec);
-        } else {
-            cityMapRenderer.render(renderPass, camera, timeSec);
-        }
-
-        // 3. Draw Drone 3D Custom Model (only when in external CHASE mode)
-        if (camera.mode === 'CHASE') {
-            modelRenderer.render(renderPass, camera, pos, [-rot[0], rot[1], -rot[2]], 2.0, timeSec);
-        }
-
-        // 4. Draw Combat Elements: Simple Box Tanks, Soldiers, Ordnance & Explosions
-        combatRenderer.render(renderPass, camera, entityManager, weaponSystem, timeSec);
+        skyRenderer.render(renderPass, camera);
+        fieldRenderer.render(renderPass, camera);
+        tankRenderer.render(renderPass, camera);
 
         renderPass.end();
         gpu.device.queue.submit([commandEncoder.finish()]);

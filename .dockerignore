@@ -6,7 +6,6 @@ dist
 *.log
 *.tsbuildinfo
 .env
-certs/
 *.onnx
 .venv
 **/.venv

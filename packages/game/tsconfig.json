@@ -10,5 +10,5 @@
     "outDir": "./dist",
     "types": ["@webgpu/types", "vite/client"],
   },
-  "include": ["src/**/*", "../shared/src/**/*"]
+  "include": ["src/**/*"]
 }

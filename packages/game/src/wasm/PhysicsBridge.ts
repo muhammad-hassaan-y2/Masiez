@@ -9,8 +9,37 @@ export interface SensorOutput {
     longitude: number;
 }
 
+interface EmscriptenModule {
+    HEAPF32?: Float32Array;
+    HEAPF64?: Float64Array;
+    setValue(ptr: number, value: number, type: 'i8' | 'float'): void;
+    getValue(ptr: number, type: 'float' | 'double'): number;
+    _malloc(size: number): number;
+    _physics_init(x: number, y: number, z: number): void;
+    _physics_arm(armed: number): void;
+    _physics_set_ground_offset(offset: number): void;
+    _physics_is_armed(): number;
+    _physics_step(dt: number): void;
+    _physics_get_position(ptr: number): void;
+    _physics_get_rotation(ptr: number): void;
+    _physics_get_velocity(ptr: number): void;
+    _physics_get_motor_rpms(ptr: number): void;
+    _fc_set_mode(mode: number): void;
+    _fc_get_mode(): number;
+    _fc_set_manual_input(throttle: number, pitch: number, roll: number, yaw: number): void;
+    _fc_set_target(x: number, y: number, z: number, heading: number): void;
+    _collision_load_heightmap(ptr: number, width: number, height: number, sx: number, sy: number, sz: number): void;
+    _sensors_get_data(floatPtr: number, doublePtr: number): void;
+}
+
+declare global {
+    interface Window {
+        createPhysicsModule?: (options: { locateFile: (path: string) => string }) => Promise<EmscriptenModule>;
+    }
+}
+
 export class PhysicsBridge {
-    private module: any = null;
+    private module?: EmscriptenModule;
     private floatBufferPtr: number = 0;
     private doubleBufferPtr: number = 0;
 
@@ -20,21 +49,21 @@ export class PhysicsBridge {
             script.src = '/assets/physics.js';
             script.onload = async () => {
                 try {
-                    // @ts-ignore
                     const factory = window.createPhysicsModule;
-                    if (typeof factory !== 'function') {
+                    if (!factory) {
                         throw new Error("createPhysicsModule not found on window");
                     }
 
-                    this.module = await factory({
+                    const module = await factory({
                         locateFile: (path: string) => `/assets/${path}`,
                     });
+                    this.module = module;
 
                     // Allocate memory for data reading
-                    this.floatBufferPtr = this.module._malloc(16 * 4); // 16 floats
-                    this.doubleBufferPtr = this.module._malloc(4 * 8); // 4 doubles
+                    this.floatBufferPtr = module._malloc(16 * 4); // 16 floats
+                    this.doubleBufferPtr = module._malloc(4 * 8); // 4 doubles
 
-                    this.module._physics_init(0, 10, 0);
+                    module._physics_init(0, 10, 0);
                     console.log("C++ WebAssembly Physics Engine initialized successfully.");
                     resolve(true);
                 } catch (e) {

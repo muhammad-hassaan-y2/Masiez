@@ -41,7 +41,7 @@ export class GPUDeviceContext {
 
         this.device = await adapter.requestDevice();
 
-        this.device.addEventListener('uncapturederror', (event: any) => {
+        this.device.addEventListener('uncapturederror', (event: GPUUncapturedErrorEvent) => {
             console.error('WebGPU Uncaptured Error:', event.error);
             const errEl = document.getElementById('error-console');
             if (errEl) {
