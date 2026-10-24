@@ -13,6 +13,8 @@ import { HUD } from './hud/HUD';
 import { AnnotationOverlay } from './training/AnnotationOverlay';
 import { buildCocoJson, projectTankBoxes } from './training/Annotations';
 import { DatasetGenerator } from './training/DatasetGenerator';
+import { RfDetrDetector } from './training/RfDetrDetector';
+import type { DetectionSource } from './training/RfDetrDetector';
 
 type SpeedMode = 'CRUISE' | 'SPORT' | 'TURBO';
 
@@ -76,6 +78,12 @@ async function bootstrap() {
 
     const speedModes: SpeedMode[] = ['CRUISE', 'SPORT', 'TURBO'];
     let speedModeIndex = speedModes.length - 1;
+
+    const detectionSources: DetectionSource[] = ['software', 'rfdetr-femto'];
+    let detectionSourceIndex = 0;
+    const detector = new RfDetrDetector();
+    const DETECTION_INTERVAL_MS = 500;
+    let lastDetectionAt = 0;
 
     const speedProfiles: Record<SpeedMode, SpeedProfile> = {
         'CRUISE': {
@@ -157,6 +165,21 @@ async function bootstrap() {
     function cycleSpeedMode(): void {
         speedModeIndex = (speedModeIndex + 1) % speedModes.length;
         notify(`SPEED MODE: ${speedModes[speedModeIndex]}`);
+    }
+
+    function selectDetectionSource(source: DetectionSource): void {
+        detectionSourceIndex = detectionSources.indexOf(source);
+        annotationOverlay.setDetectionSource(source);
+        if (source === 'rfdetr-femto') {
+            detector.init();
+        }
+    }
+
+    function detectorLabel(): string {
+        if (detector.failed) return 'RF-DETR · FAILED';
+        if (detector.loading) return 'RF-DETR · LOADING';
+        if (detector.ready) return `RF-DETR · ${Math.round(detector.inferenceMs)}MS`;
+        return 'RF-DETR FEMTO';
     }
 
     function toggleMute(): void {
@@ -242,6 +265,7 @@ async function bootstrap() {
         }
     };
     hud.onSpeedModeToggle = cycleSpeedMode;
+    hud.onDetectionSourceChange = selectDetectionSource;
     hud.onAudioToggle = toggleMute;
     hud.onRespawn = respawn;
     hud.onCaptureFrame = () => {
@@ -480,6 +504,8 @@ async function bootstrap() {
             sensors,
             armed: isArmed,
             speedMode: speedModes[speedModeIndex],
+            detectionSource: detectionSources[detectionSourceIndex],
+            detector: detectorLabel(),
             muted: soundManager.getMuted(),
             targetMode: input.targetMode,
             frozen,
@@ -515,6 +541,18 @@ async function bootstrap() {
 
         renderPass.end();
         gpu.device.queue.submit([commandEncoder.finish()]);
+
+        if (
+            !frozen &&
+            input.targetMode &&
+            detectionSources[detectionSourceIndex] === 'rfdetr-femto' &&
+            detector.ready &&
+            !detector.isBusy &&
+            now - lastDetectionAt >= DETECTION_INTERVAL_MS
+        ) {
+            lastDetectionAt = now;
+            void detector.detect(canvas).then((boxes) => annotationOverlay.setModelBoxes(boxes));
+        }
 
         requestAnimationFrame(frame);
     }

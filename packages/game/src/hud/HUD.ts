@@ -1,4 +1,5 @@
 import { SensorOutput } from '../wasm/PhysicsBridge';
+import type { DetectionSource } from '../training/RfDetrDetector';
 
 const TEXT = 'rgba(255,255,255,0.92)';
 const SHADOW = '0 1px 3px rgba(0,0,0,0.8)';
@@ -8,6 +9,8 @@ export interface HudTelemetry {
     sensors: SensorOutput;
     armed: boolean;
     speedMode: string;
+    detectionSource: DetectionSource;
+    detector: string;
     muted: boolean;
     targetMode: boolean;
     frozen: boolean;
@@ -73,12 +76,15 @@ export class HUD {
     private userMenuOverlayEl!: HTMLElement;
     private menuAudioBtn!: HTMLButtonElement;
     private menuSpeedBtn!: HTMLButtonElement;
+    private menuSoftwareBtn!: HTMLButtonElement;
+    private menuModelBtn!: HTMLButtonElement;
     private captureStatusEl!: HTMLElement;
     private leftStickDot!: HTMLElement;
     private rightStickDot!: HTMLElement;
 
     public onMenuOpenChange: (isOpen: boolean) => void = () => {};
     public onSpeedModeToggle: () => void = () => {};
+    public onDetectionSourceChange: (source: DetectionSource) => void = () => {};
     public onAudioToggle: () => void = () => {};
     public onRespawn: () => void = () => {};
     public onCaptureFrame: () => void = () => {};
@@ -416,7 +422,20 @@ export class HUD {
         });
         respawnBtn.style.gridColumn = 'span 2';
         respawnBtn.style.textAlign = 'center';
-        grid.append(this.menuSpeedBtn, this.menuAudioBtn, captureBtn, datasetBtn, respawnBtn);
+
+        const detectorSection = document.createElement('div');
+        detectorSection.style.cssText = 'grid-column:span 2;display:flex;flex-direction:column;gap:6px;';
+        const detectorTitle = document.createElement('div');
+        detectorTitle.innerText = 'DETECTOR';
+        detectorTitle.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:0.16em;color:rgba(255,255,255,0.6);';
+        const detectorOptions = document.createElement('div');
+        detectorOptions.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
+        this.menuSoftwareBtn = button('○ SOFTWARE', () => this.onDetectionSourceChange('software'));
+        this.menuModelBtn = button('○ RF-DETR FEMTO', () => this.onDetectionSourceChange('rfdetr-femto'));
+        detectorOptions.append(this.menuSoftwareBtn, this.menuModelBtn);
+        detectorSection.append(detectorTitle, detectorOptions);
+
+        grid.append(this.menuSpeedBtn, this.menuAudioBtn, detectorSection, captureBtn, datasetBtn, respawnBtn);
         card.appendChild(grid);
 
         this.captureStatusEl = document.createElement('div');
@@ -549,5 +568,17 @@ export class HUD {
 
         this.menuAudioBtn.innerHTML = `AUDIO: <b>${t.muted ? 'MUTED' : 'ACTIVE'}</b>`;
         this.menuSpeedBtn.innerHTML = `SPEED: <b>${t.speedMode}</b>`;
+
+        const softwareActive = t.detectionSource === 'software';
+        this.menuSoftwareBtn.innerHTML = `${softwareActive ? '●' : '○'} SOFTWARE`;
+        this.menuModelBtn.innerHTML = `${softwareActive ? '○' : '●'} ${t.detector}`;
+        this.paintDetectorOption(this.menuSoftwareBtn, softwareActive);
+        this.paintDetectorOption(this.menuModelBtn, !softwareActive);
+    }
+
+    private paintDetectorOption(button: HTMLButtonElement, active: boolean): void {
+        button.style.borderColor = active ? 'rgba(255,196,110,0.95)' : 'rgba(255,255,255,0.25)';
+        button.style.background = active ? 'rgba(255,196,110,0.16)' : 'rgba(255,255,255,0.06)';
+        button.style.color = active ? '#ffd79a' : '#e8e8e8';
     }
 }

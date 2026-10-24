@@ -7,5 +7,4 @@ dist/
 .venv/
 __pycache__/
 .ipynb_checkpoints/
-*.onnx
 .qoder

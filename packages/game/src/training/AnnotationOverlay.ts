@@ -1,16 +1,19 @@
 import { Camera } from '../scene/Camera';
 import { TankTarget } from '../gpu/TankRenderer';
 import { ScreenBox, projectTankBoxes } from './Annotations';
+import type { DetectionSource, ModelBox } from './RfDetrDetector';
 
 export class AnnotationOverlay {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
     private targetMode = false;
+    private source: DetectionSource = 'software';
     private selectedIndex = -1;
     private pointerX = 0;
     private pointerY = 0;
     private pointerActive = false;
     private boxes: ScreenBox[] = [];
+    private modelBoxes: ModelBox[] = [];
     private dpr = 1;
     private viewWidth = 0;
     private viewHeight = 0;
@@ -46,6 +49,17 @@ export class AnnotationOverlay {
         this.selectedIndex = index;
     }
 
+    public setDetectionSource(source: DetectionSource): void {
+        if (this.source === source) return;
+        this.source = source;
+        this.boxes = [];
+        this.modelBoxes = [];
+    }
+
+    public setModelBoxes(boxes: ModelBox[]): void {
+        this.modelBoxes = boxes;
+    }
+
     public hitTest(x: number, y: number): number | undefined {
         let match: ScreenBox | undefined;
         for (const box of this.boxes) {
@@ -74,38 +88,51 @@ export class AnnotationOverlay {
         this.boxes = [];
         if (!this.targetMode) return;
 
-        const boxes = projectTankBoxes(camera, targets, this.viewWidth, this.viewHeight);
-        this.boxes = boxes;
-        const hoveredIndex = this.pointerActive ? this.hitTest(this.pointerX, this.pointerY) : undefined;
-
         ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
         ctx.font = '600 11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
         ctx.textBaseline = 'top';
 
+        if (this.source === 'software') {
+            this.drawSoftware(camera, targets);
+        } else {
+            this.drawModel();
+        }
+    }
+
+    private drawSoftware(camera: Camera, targets: TankTarget[]): void {
+        const boxes = projectTankBoxes(camera, targets, this.viewWidth, this.viewHeight);
+        this.boxes = boxes;
+        const hoveredIndex = this.pointerActive ? this.hitTest(this.pointerX, this.pointerY) : undefined;
+
         for (const box of boxes) {
             const selected = box.tankIndex === this.selectedIndex;
             const hovered = box.tankIndex === hoveredIndex;
-            ctx.lineWidth = selected || hovered ? 2.5 : 1.5;
-            ctx.strokeStyle = selected
-                ? 'rgba(255,120,90,1)'
-                : this.targetMode
-                    ? 'rgba(255,196,110,0.95)'
-                    : 'rgba(120,255,170,0.95)';
-            ctx.strokeRect(box.x, box.y, box.width, box.height);
-
             const label = selected
                 ? `LOCKED ${String(box.tankIndex).padStart(2, '0')}`
                 : `TANK ${String(box.tankIndex).padStart(2, '0')}`;
-            const labelWidth = ctx.measureText(label).width + 8;
-            const labelY = box.y >= 17 ? box.y - 17 : box.y;
-            ctx.fillStyle = selected ? 'rgba(60,16,10,0.85)' : 'rgba(6,18,12,0.78)';
-            ctx.fillRect(box.x, labelY, labelWidth, 16);
-            ctx.fillStyle = selected
-                ? 'rgba(255,170,140,1)'
-                : this.targetMode
-                    ? 'rgba(255,214,150,1)'
-                    : 'rgba(140,255,190,0.98)';
-            ctx.fillText(label, box.x + 4, labelY + 3);
+            this.paintBox(box, label, selected, hovered);
         }
+    }
+
+    private drawModel(): void {
+        for (const box of this.modelBoxes) {
+            this.paintBox(box, `TANK ${box.score.toFixed(2)}`, false, false);
+        }
+    }
+
+    private paintBox(box: { x: number; y: number; width: number; height: number }, label: string, selected: boolean, hovered: boolean): void {
+        const ctx = this.ctx;
+        ctx.lineWidth = selected || hovered ? 2.5 : 1.5;
+        ctx.strokeStyle = selected
+            ? 'rgba(255,120,90,1)'
+            : 'rgba(255,196,110,0.95)';
+        ctx.strokeRect(box.x, box.y, box.width, box.height);
+
+        const labelWidth = ctx.measureText(label).width + 8;
+        const labelY = box.y >= 17 ? box.y - 17 : box.y;
+        ctx.fillStyle = selected ? 'rgba(60,16,10,0.85)' : 'rgba(6,18,12,0.78)';
+        ctx.fillRect(box.x, labelY, labelWidth, 16);
+        ctx.fillStyle = selected ? 'rgba(255,170,140,1)' : 'rgba(255,214,150,1)';
+        ctx.fillText(label, box.x + 4, labelY + 3);
     }
 }
