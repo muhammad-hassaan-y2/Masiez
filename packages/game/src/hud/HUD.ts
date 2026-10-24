@@ -82,6 +82,7 @@ export class HUD {
     public onAudioToggle: () => void = () => {};
     public onRespawn: () => void = () => {};
     public onCaptureFrame: () => void = () => {};
+    public onGenerateDataset: () => void = () => {};
 
     constructor() {
         this.container = document.createElement('div');
@@ -406,13 +407,16 @@ export class HUD {
         const captureBtn = button('CAPTURE FRAME + LABELS', () => this.onCaptureFrame());
         captureBtn.style.gridColumn = 'span 2';
         captureBtn.style.textAlign = 'center';
+        const datasetBtn = button('GENERATE DATASET', () => this.onGenerateDataset());
+        datasetBtn.style.gridColumn = 'span 2';
+        datasetBtn.style.textAlign = 'center';
         const respawnBtn = button('RESPAWN DRONE', () => {
             this.onRespawn();
             this.toggleUserMenu(false);
         });
         respawnBtn.style.gridColumn = 'span 2';
         respawnBtn.style.textAlign = 'center';
-        grid.append(this.menuSpeedBtn, this.menuAudioBtn, captureBtn, respawnBtn);
+        grid.append(this.menuSpeedBtn, this.menuAudioBtn, captureBtn, datasetBtn, respawnBtn);
         card.appendChild(grid);
 
         this.captureStatusEl = document.createElement('div');

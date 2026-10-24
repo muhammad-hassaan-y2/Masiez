@@ -5,7 +5,7 @@ import { terrainHeight } from '../gameplay/Terrain';
 import { loadGltf, GltfModel } from './GltfModel';
 import tankShaderCode from '../shaders/tank.wgsl?raw';
 
-interface TankPlacement {
+export interface TankPlacement {
     x: number;
     z: number;
     yaw: number;
@@ -25,7 +25,7 @@ export interface TankTarget {
     yaw: number;
 }
 
-const TANKS: TankPlacement[] = [
+export const TANKS: TankPlacement[] = [
     { x: 46, z: 38, yaw: 0.5 },
     { x: 62, z: 50, yaw: 2.2 },
     { x: -38, z: 64, yaw: 1.1 },
@@ -51,6 +51,7 @@ export class TankRenderer {
     private frameBuffer!: GPUBuffer;
     private frameBindGroup!: GPUBindGroup;
     private model: GltfModel | undefined;
+    private modelBindGroupLayout: GPUBindGroupLayout | undefined;
     private instances: TankInstance[] = [];
     private destroyedTanks: Set<number> = new Set();
 
@@ -101,7 +102,7 @@ export class TankRenderer {
         this.destroyedTanks.clear();
     }
 
-    public async init(): Promise<void> {
+    public async init(placements: TankPlacement[] = TANKS): Promise<void> {
         const device = this.ctx.device;
 
         this.model = await loadGltf(this.ctx, MODEL_URL);
@@ -155,7 +156,25 @@ export class TankRenderer {
             ],
         });
 
-        const modelBindGroupLayout = this.pipeline.getBindGroupLayout(1);
+        this.modelBindGroupLayout = this.pipeline.getBindGroupLayout(1);
+        this.buildInstances(placements);
+    }
+
+    public setPlacements(placements: TankPlacement[]): void {
+        if (!this.model || !this.modelBindGroupLayout) return;
+        for (const instance of this.instances) {
+            instance.uniformBuffer.destroy();
+        }
+        this.instances = [];
+        this.destroyedTanks.clear();
+        this.buildInstances(placements);
+    }
+
+    private buildInstances(placements: TankPlacement[]): void {
+        if (!this.model || !this.modelBindGroupLayout) return;
+
+        const device = this.ctx.device;
+        const modelBindGroupLayout = this.modelBindGroupLayout;
         const localMin = this.model.min;
         const localMax = this.model.max;
         const localCenterX = (localMin[0] + localMax[0]) * 0.5;
@@ -163,7 +182,7 @@ export class TankRenderer {
         const halfX = (localMax[0] - localMin[0]) * 0.5;
         const halfZ = (localMax[2] - localMin[2]) * 0.5;
 
-        for (const tank of TANKS) {
+        for (const tank of placements) {
             const tankX = tank.x * TANK_SPREAD;
             const tankZ = tank.z * TANK_SPREAD;
             const baseY = terrainHeight(tankX, tankZ);

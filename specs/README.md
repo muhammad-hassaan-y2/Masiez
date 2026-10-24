@@ -29,8 +29,9 @@ Masiez is a real-time 3D drone simulation that runs inside a single browser page
 ## Perception & Training Data
 - **Software detection** is the active perception source. Tank boxes are projected from the simulation's known transforms, so they are exact and cost nothing.
 - **Capture** exports the current camera frame as a PNG plus a COCO JSON file containing every projected box, at render resolution.
-- **Detector training** notebooks in `packages/notebooks` turn recorded captures into a single-class tank dataset, fine-tune an RT-DETR detector, validate it, and export an ONNX model with a fixed, verified input/output contract.
-- **Preview and scoring** notebooks run the exported model on recorded captures and report precision and recall against the game's exact labels.
+- **Dataset generation** batch-renders labelled frames from the running client at a reduced resolution, randomising drone pose and tank layout per frame. It reuses the gameplay shaders, optics, and box projector, so generated frames match what the detector sees in flight, and writes a `train/` + `valid/` COCO dataset as one zip download. This bootstraps training without hand-flying captures; captures stay the source of truth for validation.
+- **Detector training** in `packages/notebooks` fine-tunes RF-DETR Nano on the single class `tank` and exports ONNX for onnxruntime-web plus an experimental LiteRT `.tflite`. The ONNX graph exposes `input` with `dets` (normalised centre-width-height boxes) and `labels` (per-class logits needing a sigmoid).
+- **Reduced resolution.** Training and inference use a small square input (384 px, RF-DETR Nano's native size) rather than render resolution; frames are resized to it and boxes mapped back to the live frame.
 - The trained model is intended to become the second in-game detection source; software boxes remain the default until it is wired in.
 
 ## User Interface
@@ -39,9 +40,9 @@ The interface is intentionally minimal and only shows information that is useful
 - **Flight readouts**: compass heading, link quality, flight timer, battery current and consumption, throttle, and armed state.
 - **Target overlay**: boxes for visible tanks in target mode, with the locked tank highlighted.
 - **Status messages**: transient notifications, signal lost with replacement inbound, and map cleared with redeploy prompt.
-- **Menu**: speed, audio, capture frame plus labels, and drone respawn. The paused game stays visible behind it.
+- **Menu**: speed, audio, capture frame plus labels, dataset generation, and drone respawn. The paused game stays visible behind it.
 
 ## Project Structure
-- `packages/game` — WebGPU renderer, HUD, input, autopilot, annotation overlay, and the browser entry point.
+- `packages/game` — WebGPU renderer, HUD, input, autopilot, annotation overlay, dataset generator, and the browser entry point.
 - `packages/game/src/wasm` — C++ flight, sensor, and collision simulation compiled to WebAssembly.
-- `packages/notebooks` — Kaggle notebooks for detector training, ONNX export, and evaluation.
+- `packages/notebooks` — Kaggle notebooks for detector and policy training and ONNX export.

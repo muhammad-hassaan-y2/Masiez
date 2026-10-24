@@ -12,6 +12,7 @@ import { InputManager } from './input/InputManager';
 import { HUD } from './hud/HUD';
 import { AnnotationOverlay } from './training/AnnotationOverlay';
 import { buildCocoJson, projectTankBoxes } from './training/Annotations';
+import { DatasetGenerator } from './training/DatasetGenerator';
 
 type SpeedMode = 'CRUISE' | 'SPORT' | 'TURBO';
 
@@ -71,6 +72,7 @@ async function bootstrap() {
     const annotationOverlay = new AnnotationOverlay();
     const autopilot = new Autopilot();
     const hud = new HUD();
+    const datasetGenerator = new DatasetGenerator(gpu, skyRenderer, fieldRenderer);
 
     const speedModes: SpeedMode[] = ['CRUISE', 'SPORT', 'TURBO'];
     let speedModeIndex = speedModes.length - 1;
@@ -245,6 +247,19 @@ async function bootstrap() {
     hud.onCaptureFrame = () => {
         captureRequested = true;
     };
+    hud.onGenerateDataset = async () => {
+        if (datasetGenerator.isRunning) return;
+        try {
+            const blob = await datasetGenerator.generate({}, ({ done, total, split }) => {
+                hud.setCaptureStatus(`GENERATING ${split.toUpperCase()} ${done}/${total}`);
+            });
+            downloadBlob(blob, 'tank-dataset.zip');
+            hud.setCaptureStatus('DATASET SAVED · TANK-DATASET.ZIP');
+        } catch (error) {
+            console.error('Dataset generation failed:', error);
+            hud.setCaptureStatus('DATASET FAILED · SEE CONSOLE');
+        }
+    };
 
     let lastTime = performance.now();
     let physicsAccumulator = 0;
@@ -259,7 +274,7 @@ async function bootstrap() {
             captureFrame();
         }
 
-        const frozen = hud.isMenuOpen || (mapCleared && !exploded);
+        const frozen = hud.isMenuOpen || datasetGenerator.isRunning || (mapCleared && !exploded);
 
         if (!frozen) {
             simElapsedSec += deltaSec;
