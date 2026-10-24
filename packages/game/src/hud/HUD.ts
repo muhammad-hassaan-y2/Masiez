@@ -458,7 +458,7 @@ export class HUD {
         addOp('SPACE', 'ARM / DISARM');
         addOp('T', 'TARGET SELECT');
         addOp('M', 'AUDIO');
-        addOp('ESC', 'MENU');
+        addOp('`', 'MENU');
         card.appendChild(opsRow);
 
         this.userMenuOverlayEl.appendChild(card);
