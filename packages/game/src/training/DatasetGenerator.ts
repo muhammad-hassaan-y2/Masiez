@@ -14,6 +14,7 @@ export interface GeneratorOptions {
     height: number;
     maxTanks: number;
     backgroundShare: number;
+    closeUpShare: number;
     jpegQuality: number;
     seed: number;
 }
@@ -31,6 +32,7 @@ export const GENERATOR_DEFAULTS: GeneratorOptions = {
     height: 540,
     maxTanks: 7,
     backgroundShare: 0.08,
+    closeUpShare: 0.35,
     jpegQuality: 0.9,
     seed: 1,
 };
@@ -269,17 +271,25 @@ export class DatasetGenerator {
         fileName: string,
     ): FrameRecord {
         const focus: [number, number] = [(random() - 0.5) * 280, (random() - 0.5) * 280];
-        const placements = random() < opts.backgroundShare ? [] : randomPlacements(random, opts.maxTanks, focus);
+        const background = random() < opts.backgroundShare;
+        const closeUp = !background && random() < opts.closeUpShare;
+        const placements = background ? [] : randomPlacements(random, opts.maxTanks, focus);
+        if (closeUp && placements.length === 0) {
+            placements.push({ x: focus[0], z: focus[1], yaw: random() * Math.PI * 2 });
+        }
         tanks.setPlacements(placements);
 
+        const aim = closeUp
+            ? placements[Math.floor(random() * placements.length)]
+            : { x: focus[0], z: focus[1] };
         const viewAngle = random() * Math.PI * 2;
-        const distance = 25 + random() * 90;
-        const altitude = 12 + random() * 50;
-        const x = focus[0] + Math.cos(viewAngle) * distance;
-        const z = focus[1] + Math.sin(viewAngle) * distance;
+        const distance = closeUp ? 5 + random() * 12 : 25 + random() * 90;
+        const altitude = closeUp ? 1.5 + random() * 4.5 : 12 + random() * 50;
+        const x = aim.x + Math.cos(viewAngle) * distance;
+        const z = aim.z + Math.sin(viewAngle) * distance;
         const ground = terrainHeight(x, z);
 
-        const heading = Math.atan2(-(focus[0] - x), focus[1] - z) + (random() - 0.5) * 1.4;
+        const heading = Math.atan2(-(aim.x - x), aim.z - z) + (random() - 0.5) * (closeUp ? 0.6 : 1.4);
         const pitch = Math.min(0.7, Math.max(0.08, Math.atan2(altitude, distance)));
         this.camera.pitchRad = Math.min(0.75, Math.max(0.02, pitch + (random() - 0.5) * 0.5));
         this.camera.update(

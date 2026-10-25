@@ -11,6 +11,8 @@ export interface AutopilotSpeed {
     brakeRate: number;
 }
 
+export type FollowerMode = 'world' | 'screen';
+
 export interface AutopilotCommand {
     throttle: number;
     pitch: number;

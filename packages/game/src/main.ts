@@ -6,15 +6,18 @@ import { SkyRenderer } from './gpu/SkyRenderer';
 import { SoundManager } from './gameplay/SoundManager';
 import { CollisionSystem } from './gameplay/CollisionSystem';
 import { Autopilot } from './gameplay/Autopilot';
+import type { FollowerMode } from './gameplay/Autopilot';
+import { ScreenAutopilot } from './gameplay/ScreenAutopilot';
 import { terrainHeight } from './gameplay/Terrain';
 import { Camera } from './scene/Camera';
 import { InputManager } from './input/InputManager';
 import { HUD } from './hud/HUD';
 import { AnnotationOverlay } from './training/AnnotationOverlay';
+import type { ModelObservation } from './training/AnnotationOverlay';
 import { buildCocoJson, projectTankBoxes } from './training/Annotations';
 import { DatasetGenerator } from './training/DatasetGenerator';
 import { RfDetrDetector } from './training/RfDetrDetector';
-import type { DetectionSource } from './training/RfDetrDetector';
+import type { DetectionSource, ModelId } from './training/RfDetrDetector';
 
 type SpeedMode = 'CRUISE' | 'SPORT' | 'TURBO';
 
@@ -73,14 +76,21 @@ async function bootstrap() {
     const input = new InputManager(canvas);
     const annotationOverlay = new AnnotationOverlay();
     const autopilot = new Autopilot();
+    const screenAutopilot = new ScreenAutopilot();
     const hud = new HUD();
     const datasetGenerator = new DatasetGenerator(gpu, skyRenderer, fieldRenderer);
 
     const speedModes: SpeedMode[] = ['CRUISE', 'SPORT', 'TURBO'];
     let speedModeIndex = speedModes.length - 1;
 
-    const detectionSources: DetectionSource[] = ['software', 'rfdetr-femto'];
+    const detectionSources: DetectionSource[] = ['software', 'rfdetr-femto', 'rfdetr-atto'];
+    const modelNames: Record<ModelId, string> = {
+        'rfdetr-femto': 'RF-DETR FEMTO',
+        'rfdetr-atto': 'RF-DETR ATTO',
+    };
     let detectionSourceIndex = 0;
+    const followerModes: FollowerMode[] = ['world', 'screen'];
+    let followerIndex = 0;
     const detector = new RfDetrDetector();
     const DETECTION_INTERVAL_MS = 500;
     let lastDetectionAt = 0;
@@ -146,6 +156,7 @@ async function bootstrap() {
         exploded = false;
         explodedAt = 0;
         autopilot.cancel();
+        screenAutopilot.cancel();
         hud.setSignalLost(false);
         hud.setMapCleared(mapCleared);
         camera.currentGroundElevation = GROUND_HEIGHT;
@@ -170,16 +181,28 @@ async function bootstrap() {
     function selectDetectionSource(source: DetectionSource): void {
         detectionSourceIndex = detectionSources.indexOf(source);
         annotationOverlay.setDetectionSource(source);
-        if (source === 'rfdetr-femto') {
-            detector.init();
+        lastDetectionAt = 0;
+        if (source !== 'software') {
+            detector.load(source);
         }
+        notify(`DETECTOR: ${source === 'software' ? 'SOFTWARE' : modelNames[source]}`);
     }
 
     function detectorLabel(): string {
-        if (detector.failed) return 'RF-DETR · FAILED';
-        if (detector.loading) return 'RF-DETR · LOADING';
-        if (detector.ready) return `RF-DETR · ${Math.round(detector.inferenceMs)}MS`;
-        return 'RF-DETR FEMTO';
+        const source = detectionSources[detectionSourceIndex];
+        if (source === 'software') return 'SOFTWARE';
+        const name = modelNames[source];
+        if (detector.failed) return `${name} · FAILED`;
+        if (detector.loading) return `${name} · LOADING`;
+        if (detector.ready) return `${name} · ${Math.round(detector.inferenceMs)}MS`;
+        return name;
+    }
+
+    function selectFollower(mode: FollowerMode): void {
+        followerIndex = followerModes.indexOf(mode);
+        autopilot.cancel();
+        screenAutopilot.cancel();
+        notify(`FOLLOWER: ${mode === 'world' ? 'WORLD TARGET' : 'SCREEN TRACK'}`);
     }
 
     function toggleMute(): void {
@@ -245,12 +268,24 @@ async function bootstrap() {
         hud.toggleUserMenu();
     };
     input.onTargetSelect = (clientX: number, clientY: number) => {
-        const index = annotationOverlay.hitTest(clientX, clientY);
-        if (index === undefined) return;
-        autopilot.setTarget(index);
+        const target = annotationOverlay.hitTest(clientX, clientY);
+        if (!target) return;
+        if (followerModes[followerIndex] === 'world') {
+            if (target.tankIndex === undefined) {
+                notify('WORLD FOLLOW: NO TANK MATCH');
+                return;
+            }
+            screenAutopilot.cancel();
+            autopilot.setTarget(target.tankIndex);
+            return;
+        }
+        autopilot.cancel();
+        screenAutopilot.setTarget(target);
     };
     input.onTargetModeChange = (active: boolean) => {
-        if (!active) autopilot.cancel();
+        if (active) return;
+        autopilot.cancel();
+        screenAutopilot.cancel();
     };
 
     function syncPauseState(): void {
@@ -265,6 +300,7 @@ async function bootstrap() {
         }
     };
     hud.onSpeedModeToggle = cycleSpeedMode;
+    hud.onFollowerChange = selectFollower;
     hud.onDetectionSourceChange = selectDetectionSource;
     hud.onAudioToggle = toggleMute;
     hud.onRespawn = respawn;
@@ -319,26 +355,32 @@ async function bootstrap() {
         const speedProfile = speedProfiles[speedModes[speedModeIndex]];
 
         if (!frozen) {
-            if (autopilot.isActive && input.hasAnyFlightInput()) {
+            if (input.hasAnyFlightInput() && (autopilot.isActive || screenAutopilot.isActive)) {
                 autopilot.cancel();
+                screenAutopilot.cancel();
             }
-            if (!exploded && (input.hasAnyFlightInput() || autopilot.isActive) && !physics.isArmed()) {
+            if (!exploded && (input.hasAnyFlightInput() || autopilot.isActive || screenAutopilot.isActive) && !physics.isArmed()) {
                 physics.arm(true);
             }
 
-            const command = autopilot.update(
-                physics.getPosition(),
-                headingRad,
-                tankRenderer.getTargets(),
-                speedProfile,
-            );
-            if (command) {
-                inThrottle = command.throttle;
-                inPitch = command.pitch;
-                inRoll = command.roll;
-                inYaw = command.yaw;
-                if (command.reached) {
-                    notify('TARGET REACHED');
+            if (followerModes[followerIndex] === 'world') {
+                const command = autopilot.update(physics.getPosition(), headingRad, tankRenderer.getTargets(), speedProfile);
+                if (command) {
+                    inThrottle = command.throttle;
+                    inPitch = command.pitch;
+                    inRoll = command.roll;
+                    inYaw = command.yaw;
+                    if (command.reached) {
+                        notify('TARGET REACHED');
+                    }
+                }
+            } else {
+                const command = screenAutopilot.update(annotationOverlay.getTargets(), window.innerWidth, window.innerHeight, deltaSec);
+                if (command) {
+                    inThrottle = command.throttle;
+                    inPitch = command.pitch;
+                    inRoll = command.roll;
+                    inYaw = command.yaw;
                 }
             }
 
@@ -445,6 +487,7 @@ async function bootstrap() {
                     exploded = true;
                     explodedAt = simElapsedSec;
                     autopilot.cancel();
+                    screenAutopilot.cancel();
 
                     const blastX = subPos[0];
                     const blastY = subPos[1];
@@ -492,7 +535,11 @@ async function bootstrap() {
         camera.update(pos, headingRad, aspect, groundAtDrone, rot[0]);
         annotationOverlay.setTargetMode(input.targetMode);
         annotationOverlay.setPointer(input.pointerX, input.pointerY, input.pointerActive);
-        annotationOverlay.setSelectedIndex(autopilot.activeIndex);
+        if (followerModes[followerIndex] === 'world') {
+            annotationOverlay.setSelection(autopilot.activeIndex);
+        } else {
+            annotationOverlay.setSelection(screenAutopilot.activeTankIndex, screenAutopilot.activeBox);
+        }
         annotationOverlay.draw(camera, tankRenderer.getTargets());
 
         if (notifyUntil > 0 && now > notifyUntil) {
@@ -504,6 +551,7 @@ async function bootstrap() {
             sensors,
             armed: isArmed,
             speedMode: speedModes[speedModeIndex],
+            follower: followerModes[followerIndex],
             detectionSource: detectionSources[detectionSourceIndex],
             detector: detectorLabel(),
             muted: soundManager.getMuted(),
@@ -542,16 +590,30 @@ async function bootstrap() {
         renderPass.end();
         gpu.device.queue.submit([commandEncoder.finish()]);
 
+        const detectionSource = detectionSources[detectionSourceIndex];
         if (
             !frozen &&
             input.targetMode &&
-            detectionSources[detectionSourceIndex] === 'rfdetr-femto' &&
+            detectionSource !== 'software' &&
             detector.ready &&
             !detector.isBusy &&
             now - lastDetectionAt >= DETECTION_INTERVAL_MS
         ) {
             lastDetectionAt = now;
-            void detector.detect(canvas).then((boxes) => annotationOverlay.setModelBoxes(boxes));
+            const observation: ModelObservation = {
+                capturedAt: now,
+                heading: headingRad,
+                pitch: camera.pitchRad,
+                position: [camera.position[0], camera.position[1], camera.position[2]],
+                viewWidth: window.innerWidth,
+                viewHeight: window.innerHeight,
+                fovRad: camera.fovRad,
+            };
+            void detector.detect(canvas).then((boxes) => {
+                if (detectionSources[detectionSourceIndex] === detectionSource) {
+                    annotationOverlay.setModelBoxes(boxes, observation);
+                }
+            });
         }
 
         requestAnimationFrame(frame);

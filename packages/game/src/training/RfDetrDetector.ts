@@ -1,4 +1,5 @@
-export type DetectionSource = 'software' | 'rfdetr-femto';
+export type ModelId = 'rfdetr-femto' | 'rfdetr-atto';
+export type DetectionSource = 'software' | ModelId;
 
 export interface ModelBox {
     x: number;
@@ -26,88 +27,140 @@ interface ResultResponse {
 
 type WorkerResponse = ReadyResponse | ErrorResponse | ResultResponse;
 
-const INPUT_SIZE = 384;
+interface ModelState {
+    worker?: Worker;
+    ready: boolean;
+    loading: boolean;
+    failed: boolean;
+    inferenceMs: number;
+    pending: Map<number, (boxes: ModelBox[]) => void>;
+    nextId: number;
+    busy: boolean;
+}
+
+const MODEL_URLS: Record<ModelId, string> = {
+    'rfdetr-femto': '/models/rfdetr-femto.onnx',
+    'rfdetr-atto': '/models/rfdetr-atto.onnx',
+};
+
+const MODEL_INPUT_SIZES: Record<ModelId, number> = {
+    'rfdetr-femto': 384,
+    'rfdetr-atto': 380,
+};
 
 export class RfDetrDetector {
-    public ready = false;
-    public loading = false;
-    public failed = false;
-    public inferenceMs = 0;
-
-    private worker: Worker | undefined;
-    private canvas: HTMLCanvasElement;
+    private canvas = document.createElement('canvas');
     private context: CanvasRenderingContext2D;
-    private pending = new Map<number, (boxes: ModelBox[]) => void>();
-    private nextId = 1;
-    private busy = false;
+    private models = new Map<ModelId, ModelState>();
+    private active: ModelId = 'rfdetr-femto';
 
     constructor() {
-        this.canvas = document.createElement('canvas');
-        this.canvas.width = INPUT_SIZE;
-        this.canvas.height = INPUT_SIZE;
         const context = this.canvas.getContext('2d', { willReadFrequently: true });
         if (!context) throw new Error('2D canvas context unavailable');
         this.context = context;
     }
 
-    public get isBusy(): boolean {
-        return this.busy;
+    public get ready(): boolean {
+        return this.state().ready;
     }
 
-    public init(): void {
-        if (this.ready || this.loading) return;
-        this.loading = true;
-        this.failed = false;
+    public get loading(): boolean {
+        return this.state().loading;
+    }
+
+    public get failed(): boolean {
+        return this.state().failed;
+    }
+
+    public get inferenceMs(): number {
+        return this.state().inferenceMs;
+    }
+
+    public get isBusy(): boolean {
+        return this.state().busy;
+    }
+
+    public load(model: ModelId): void {
+        this.active = model;
+        const state = this.state();
+        if (state.ready || state.loading) return;
+        state.loading = true;
+        state.failed = false;
 
         const worker = new Worker(new URL('./RfDetrWorker.ts', import.meta.url), { type: 'module' });
-        this.worker = worker;
+        state.worker = worker;
         worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
             const message = event.data;
             if (message.type === 'ready') {
-                this.ready = true;
-                this.loading = false;
+                state.ready = true;
+                state.loading = false;
                 return;
             }
             if (message.type === 'error') {
-                this.failed = true;
-                this.loading = false;
-                console.error('RF-DETR load failed:', message.message);
+                state.failed = true;
+                state.loading = false;
+                console.error(`${model} load failed:`, message.message);
                 return;
             }
-            this.inferenceMs = message.inferenceMs;
-            const resolve = this.pending.get(message.id);
-            this.pending.delete(message.id);
+            state.inferenceMs = message.inferenceMs;
+            const resolve = state.pending.get(message.id);
+            state.pending.delete(message.id);
             if (resolve) resolve(message.boxes);
         };
         worker.onerror = (event) => {
-            this.failed = true;
-            this.loading = false;
-            console.error('RF-DETR worker failed:', event.message);
-            for (const resolve of this.pending.values()) resolve([]);
-            this.pending.clear();
-            this.busy = false;
+            state.failed = true;
+            state.loading = false;
+            state.worker = undefined;
+            console.error(`${model} worker failed:`, event.message);
+            for (const resolve of state.pending.values()) resolve([]);
+            state.pending.clear();
+            state.busy = false;
         };
-        worker.postMessage({ type: 'init' });
+        worker.postMessage({ type: 'init', url: MODEL_URLS[model], size: MODEL_INPUT_SIZES[model] });
     }
 
     public async detect(source: HTMLCanvasElement): Promise<ModelBox[]> {
-        if (!this.ready || !this.worker || this.busy) return [];
-        this.busy = true;
+        const state = this.state();
+        const worker = state.worker;
+        if (!state.ready || !worker || state.busy) return [];
+        state.busy = true;
         try {
-            this.context.drawImage(source, 0, 0, INPUT_SIZE, INPUT_SIZE);
-            const image = this.context.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE);
-            const id = this.nextId++;
-            const result = new Promise<ModelBox[]>((resolve) => this.pending.set(id, resolve));
-            this.worker.postMessage({
+            const size = MODEL_INPUT_SIZES[this.active];
+            if (this.canvas.width !== size) {
+                this.canvas.width = size;
+                this.canvas.height = size;
+            }
+            this.context.drawImage(source, 0, 0, size, size);
+            const image = this.context.getImageData(0, 0, size, size);
+            const id = state.nextId++;
+            const result = new Promise<ModelBox[]>((resolve) => state.pending.set(id, resolve));
+            worker.postMessage({
                 type: 'detect',
                 id,
-                width: source.width,
-                height: source.height,
+                width: source.clientWidth,
+                height: source.clientHeight,
                 buffer: image.data.buffer,
             }, [image.data.buffer]);
             return await result;
         } finally {
-            this.busy = false;
+            state.busy = false;
         }
+    }
+
+    private state(): ModelState {
+        let state = this.models.get(this.active);
+        if (!state) {
+            state = {
+                ready: false,
+                loading: false,
+                failed: false,
+                inferenceMs: 0,
+                pending: new Map(),
+                nextId: 1,
+                busy: false,
+            };
+            this.models.set(this.active, state);
+        }
+        return state;
     }
 }

@@ -5,6 +5,8 @@ import type { ModelBox } from './RfDetrDetector';
 
 interface InitMessage {
     type: 'init';
+    url: string;
+    size: number;
 }
 
 interface DetectMessage {
@@ -40,29 +42,30 @@ const scope = self as unknown as {
     postMessage: (message: Response) => void;
 };
 
-const INPUT_SIZE = 384;
 const SCORE_THRESHOLD = 0.5;
 const BACKGROUND_INDEX = 1;
-const MODEL_URL = '/models/rfdetr-femto.onnx';
 const MEAN = [0.485, 0.456, 0.406];
 const STD = [0.229, 0.224, 0.225];
 
 let session: ort.InferenceSession | undefined;
-const input = new Float32Array(3 * INPUT_SIZE * INPUT_SIZE);
+let inputSize = 0;
+let input = new Float32Array(0);
 
-async function init(): Promise<void> {
+async function init(url: string, size: number): Promise<void> {
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.wasmPaths = {
         mjs: loaderUrl,
         wasm: wasmUrl,
     };
-    const response = await fetch(MODEL_URL);
+    const response = await fetch(url);
     if (!response.ok) throw new Error(`model fetch failed: ${response.status}`);
     const model = new Uint8Array(await response.arrayBuffer());
     session = await ort.InferenceSession.create(model, {
         executionProviders: ['webgpu', 'wasm'],
         graphOptimizationLevel: 'all',
     });
+    inputSize = size;
+    input = new Float32Array(3 * inputSize * inputSize);
     scope.postMessage({ type: 'ready' });
 }
 
@@ -74,14 +77,14 @@ async function detect(message: DetectMessage): Promise<void> {
     }
 
     const pixels = new Uint8ClampedArray(message.buffer);
-    const plane = INPUT_SIZE * INPUT_SIZE;
+    const plane = inputSize * inputSize;
     for (let index = 0, pixel = 0; pixel < plane; pixel++, index += 4) {
         input[pixel] = (pixels[index] / 255 - MEAN[0]) / STD[0];
         input[plane + pixel] = (pixels[index + 1] / 255 - MEAN[1]) / STD[1];
         input[plane * 2 + pixel] = (pixels[index + 2] / 255 - MEAN[2]) / STD[2];
     }
 
-    const tensor = new ort.Tensor('float32', input, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+    const tensor = new ort.Tensor('float32', input, [1, 3, inputSize, inputSize]);
     const outputs = await session.run({ input: tensor });
     const dets = outputs.dets.data as Float32Array;
     const labels = outputs.labels.data as Float32Array;
@@ -113,7 +116,7 @@ async function detect(message: DetectMessage): Promise<void> {
 scope.onmessage = (event: MessageEvent<Request>) => {
     const message = event.data;
     if (message.type === 'init') {
-        init().catch((error) => {
+        init(message.url, message.size).catch((error) => {
             scope.postMessage({ type: 'error', message: String(error) });
         });
         return;

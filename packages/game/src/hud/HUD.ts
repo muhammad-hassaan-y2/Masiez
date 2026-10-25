@@ -1,4 +1,5 @@
 import { SensorOutput } from '../wasm/PhysicsBridge';
+import type { FollowerMode } from '../gameplay/Autopilot';
 import type { DetectionSource } from '../training/RfDetrDetector';
 
 const TEXT = 'rgba(255,255,255,0.92)';
@@ -9,6 +10,7 @@ export interface HudTelemetry {
     sensors: SensorOutput;
     armed: boolean;
     speedMode: string;
+    follower: FollowerMode;
     detectionSource: DetectionSource;
     detector: string;
     muted: boolean;
@@ -77,13 +79,17 @@ export class HUD {
     private menuAudioBtn!: HTMLButtonElement;
     private menuSpeedBtn!: HTMLButtonElement;
     private menuSoftwareBtn!: HTMLButtonElement;
-    private menuModelBtn!: HTMLButtonElement;
+    private menuFemtoBtn!: HTMLButtonElement;
+    private menuAttoBtn!: HTMLButtonElement;
+    private menuWorldBtn!: HTMLButtonElement;
+    private menuScreenBtn!: HTMLButtonElement;
     private captureStatusEl!: HTMLElement;
     private leftStickDot!: HTMLElement;
     private rightStickDot!: HTMLElement;
 
     public onMenuOpenChange: (isOpen: boolean) => void = () => {};
     public onSpeedModeToggle: () => void = () => {};
+    public onFollowerChange: (mode: FollowerMode) => void = () => {};
     public onDetectionSourceChange: (source: DetectionSource) => void = () => {};
     public onAudioToggle: () => void = () => {};
     public onRespawn: () => void = () => {};
@@ -423,19 +429,28 @@ export class HUD {
         respawnBtn.style.gridColumn = 'span 2';
         respawnBtn.style.textAlign = 'center';
 
-        const detectorSection = document.createElement('div');
-        detectorSection.style.cssText = 'grid-column:span 2;display:flex;flex-direction:column;gap:6px;';
-        const detectorTitle = document.createElement('div');
-        detectorTitle.innerText = 'DETECTOR';
-        detectorTitle.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:0.16em;color:rgba(255,255,255,0.6);';
-        const detectorOptions = document.createElement('div');
-        detectorOptions.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
-        this.menuSoftwareBtn = button('○ SOFTWARE', () => this.onDetectionSourceChange('software'));
-        this.menuModelBtn = button('○ RF-DETR FEMTO', () => this.onDetectionSourceChange('rfdetr-femto'));
-        detectorOptions.append(this.menuSoftwareBtn, this.menuModelBtn);
-        detectorSection.append(detectorTitle, detectorOptions);
+        const radioSection = (title: string, buttons: HTMLButtonElement[]): HTMLElement => {
+            const section = document.createElement('div');
+            section.style.cssText = 'grid-column:span 2;display:flex;flex-direction:column;gap:6px;';
+            const heading = document.createElement('div');
+            heading.innerText = title;
+            heading.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:0.16em;color:rgba(255,255,255,0.6);';
+            const options = document.createElement('div');
+            options.style.cssText = `display:grid;grid-template-columns:repeat(${buttons.length},1fr);gap:8px;`;
+            options.append(...buttons);
+            section.append(heading, options);
+            return section;
+        };
 
-        grid.append(this.menuSpeedBtn, this.menuAudioBtn, detectorSection, captureBtn, datasetBtn, respawnBtn);
+        this.menuWorldBtn = button('○ WORLD TARGET', () => this.onFollowerChange('world'));
+        this.menuScreenBtn = button('○ SCREEN TRACK', () => this.onFollowerChange('screen'));
+        this.menuSoftwareBtn = button('○ SOFTWARE', () => this.onDetectionSourceChange('software'));
+        this.menuFemtoBtn = button('○ RF-DETR FEMTO', () => this.onDetectionSourceChange('rfdetr-femto'));
+        this.menuAttoBtn = button('○ RF-DETR ATTO', () => this.onDetectionSourceChange('rfdetr-atto'));
+        const followerSection = radioSection('FOLLOWER', [this.menuWorldBtn, this.menuScreenBtn]);
+        const detectorSection = radioSection('DETECTOR', [this.menuSoftwareBtn, this.menuFemtoBtn, this.menuAttoBtn]);
+
+        grid.append(this.menuSpeedBtn, this.menuAudioBtn, followerSection, detectorSection, captureBtn, datasetBtn, respawnBtn);
         card.appendChild(grid);
 
         this.captureStatusEl = document.createElement('div');
@@ -569,14 +584,24 @@ export class HUD {
         this.menuAudioBtn.innerHTML = `AUDIO: <b>${t.muted ? 'MUTED' : 'ACTIVE'}</b>`;
         this.menuSpeedBtn.innerHTML = `SPEED: <b>${t.speedMode}</b>`;
 
+        const worldActive = t.follower === 'world';
+        this.menuWorldBtn.innerHTML = `${worldActive ? '●' : '○'} WORLD TARGET`;
+        this.menuScreenBtn.innerHTML = `${worldActive ? '○' : '●'} SCREEN TRACK`;
+        this.paintRadioOption(this.menuWorldBtn, worldActive);
+        this.paintRadioOption(this.menuScreenBtn, !worldActive);
+
         const softwareActive = t.detectionSource === 'software';
+        const femtoActive = t.detectionSource === 'rfdetr-femto';
+        const attoActive = t.detectionSource === 'rfdetr-atto';
         this.menuSoftwareBtn.innerHTML = `${softwareActive ? '●' : '○'} SOFTWARE`;
-        this.menuModelBtn.innerHTML = `${softwareActive ? '○' : '●'} ${t.detector}`;
-        this.paintDetectorOption(this.menuSoftwareBtn, softwareActive);
-        this.paintDetectorOption(this.menuModelBtn, !softwareActive);
+        this.menuFemtoBtn.innerHTML = `${femtoActive ? '●' : '○'} ${femtoActive ? t.detector : 'RF-DETR FEMTO'}`;
+        this.menuAttoBtn.innerHTML = `${attoActive ? '●' : '○'} ${attoActive ? t.detector : 'RF-DETR ATTO'}`;
+        this.paintRadioOption(this.menuSoftwareBtn, softwareActive);
+        this.paintRadioOption(this.menuFemtoBtn, femtoActive);
+        this.paintRadioOption(this.menuAttoBtn, attoActive);
     }
 
-    private paintDetectorOption(button: HTMLButtonElement, active: boolean): void {
+    private paintRadioOption(button: HTMLButtonElement, active: boolean): void {
         button.style.borderColor = active ? 'rgba(255,196,110,0.95)' : 'rgba(255,255,255,0.25)';
         button.style.background = active ? 'rgba(255,196,110,0.16)' : 'rgba(255,255,255,0.06)';
         button.style.color = active ? '#ffd79a' : '#e8e8e8';
